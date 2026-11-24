@@ -385,30 +385,117 @@
     };
   }
 
+  // ---- Acceso al esquema (schema.js se carga después del motor; se lee al momento de usarlo) ----
+  function schemaRef() {
+    return global.NEOSALUD_SCHEMA || null;
+  }
+
+  function optionLabel(f, v) {
+    const pair = (f.options || []).map((o) => (Array.isArray(o) ? o : [o, o])).find(([val]) => String(val) === String(v));
+    return pair ? pair[1] : String(v);
+  }
+
+  // Valor legible de una variable del esquema; vacío → «Sin responder».
+  function fieldText(p, key, missing) {
+    const S = schemaRef();
+    const miss = missing === undefined ? "Sin responder" : missing;
+    if (!S || !S.FIELD_BY_KEY[key]) return miss;
+    const f = S.FIELD_BY_KEY[key];
+    const v = S.readField(p, f);
+    if (v === "") return miss;
+    if (f.type === "number" && num(v) !== null) return num(v).toLocaleString("es-AR");
+    const out = optionLabel(f, v);
+    return f.type === "date" ? fmtDate(out) : out;
+  }
+
+  function fieldIs(p, key, value) {
+    const S = schemaRef();
+    if (!S || !S.FIELD_BY_KEY[key]) return false;
+    return String(S.readField(p, S.FIELD_BY_KEY[key])) === String(value);
+  }
+
+  // Tabla de texto a dos columnas alineadas (el borrador se ve en tipografía monoespaciada).
+  function twoColumnTable(pairs, colWidth) {
+    const w = colWidth || 48;
+    const cells = pairs.map(([label, value]) => ` ${label}: ${value}`);
+    const lines = [];
+    for (let i = 0; i < cells.length; i += 2) {
+      const left = cells[i];
+      const right = cells[i + 1];
+      if (right === undefined) lines.push(left);
+      else if (left.length >= w) { lines.push(left); lines.push(right); }
+      else lines.push(left.padEnd(w) + right);
+    }
+    return lines.join("\n");
+  }
+
+  // Variables del esquema visibles (rama abierta) de un conjunto de secciones.
+  // Las núcleo vacías se informan como «Sin responder»; las «A confirmar» solo si tienen dato.
+  function schemaPairs(p, sections, excludeKeys) {
+    const S = schemaRef();
+    if (!S) return [];
+    const skip = new Set(excludeKeys || []);
+    const pairs = [];
+    for (const sec of sections) {
+      for (const f of sec.fields) {
+        if (skip.has(f.key) || !S.conditionMet(p, f)) continue;
+        const v = S.readField(p, f);
+        if (v === "" && !f.core) continue;
+        pairs.push([f.label, fieldText(p, f.key)]);
+      }
+    }
+    return pairs;
+  }
+
+  // Quita líneas vacías repetidas que dejan las condiciones no aplicables.
+  // Frase del nacimiento solo con lo registrado (lo faltante ya figura como «Sin responder» en la tabla).
+  function birthNarrative(p) {
+    const bits = [];
+    if (fieldText(p, "deliveryType", "")) bits.push("nacido por " + fieldText(p, "deliveryType").toLowerCase());
+    if (fieldText(p, "presentation", "")) bits.push("presentación " + fieldText(p, "presentation").toLowerCase());
+    if (fieldText(p, "amnioticFluid", "")) bits.push("líquido amniótico " + fieldText(p, "amnioticFluid").toLowerCase());
+    if (!bits.length) return "";
+    const t = bits.join(", ");
+    return t.charAt(0).toUpperCase() + t.slice(1) + ".";
+  }
+
+  function compactLines(lines) {
+    return lines.filter((x, i) => x !== "" || (lines[i - 1] !== "" && lines[i - 1] !== undefined)).join("\n");
+  }
+
+  // Snapshot para detectar desfasaje: todas las variables del ingreso del esquema + diagnósticos.
   function admissionSnapshot(p) {
-    return {
-      tempC: String(p.admission.tempC ?? ""),
-      birthWeight: String(p.birthWeight ?? ""),
-      gaWeeks: String(p.gaWeeks ?? ""),
-      gaDays: String(p.gaDays ?? ""),
-      resuscitation: String(p.admission.resuscitation ?? ""),
-      maternalAge: String(p.admission.maternalAge ?? ""),
-      diagnoses: (p.admission.diagnoses || []).join(",")
-    };
+    const S = schemaRef();
+    const snap = {};
+    if (S) {
+      for (const sec of S.ADMISSION_SECTIONS) {
+        for (const f of sec.fields) snap[f.key] = String(S.readField(p, f));
+      }
+    }
+    snap.diagnoses = (p.admission.diagnoses || []).join(",");
+    return snap;
   }
 
   function epicrisisSnapshot(p) {
     const r = deriveRespiratory(p);
     const n = deriveNutrition(p);
-    return {
+    const S = schemaRef();
+    const snap = {
       respEvents: String(r.eventCount),
       respCoverage: p.hosp.respCoverage,
       jensen: r.jensen,
       nptDays: String(n.nptDays),
-      condition: String(p.discharge.condition || ""),
-      weightG: String(p.discharge.weightG || ""),
-      homeO2: String(p.discharge.homeO2 || "")
+      nutrEvents: String((p.hosp.nutrEvents || []).length),
+      iaasEpisodes: String((p.hosp.iaasEpisodes || []).length),
+      catheters: String((p.hosp.catheters || []).length),
+      ropExams: String((p.hosp.ropExams || []).length)
     };
+    if (S) {
+      for (const sec of [...S.HOSP_SECTIONS, ...S.DISCHARGE_SECTIONS]) {
+        for (const f of sec.fields) snap[f.key] = String(S.readField(p, f));
+      }
+    }
+    return snap;
   }
 
   const FIELD_LABELS = {
@@ -421,6 +508,10 @@
     diagnoses: "Diagnósticos de ingreso",
     respEvents: "Eventos respiratorios",
     respCoverage: "Cobertura respiratoria",
+    nutrEvents: "Eventos nutricionales",
+    iaasEpisodes: "Episodios infecciosos",
+    catheters: "Catéteres",
+    ropExams: "Controles de ROP",
     jensen: "Clasificación DBP Jensen",
     nptDays: "Días de NPT",
     condition: "Condición al egreso",
@@ -439,7 +530,7 @@
       if (prev !== curr) {
         diffs.push({
           field: key,
-          label: FIELD_LABELS[key] || key,
+          label: FIELD_LABELS[key] || (schemaRef() && schemaRef().FIELD_BY_KEY[key] ? schemaRef().FIELD_BY_KEY[key].label : key),
           prev: prev || "Sin responder",
           curr: curr || "Sin responder"
         });
@@ -476,7 +567,8 @@
 
   function valOrMissing(v, suffix) {
     if (v === null || v === undefined || v === "") return "Sin responder";
-    return suffix ? `${v} ${suffix}` : String(v);
+    const shown = typeof v === "number" ? v.toLocaleString("es-AR") : v;
+    return suffix ? `${shown} ${suffix}` : String(shown);
   }
 
   function lookupDx(code) {
@@ -486,6 +578,7 @@
 
   function generateAdmissionDraft(p) {
     const a = p.admission;
+    const S = schemaRef();
     const fenton = calcFenton2025(p.gaWeeks, p.gaDays, p.sex, p.birthWeight);
     const crib = calcCrib2(p.gaWeeks, p.birthWeight, p.sex, a.tempC, a.baseExcess);
     const kaiser = calcKaiserFor(p);
@@ -509,50 +602,60 @@
         transitionText = `${apgarTxt} Reanimación: Sin responder.`;
       }
     }
+    if (a.asphyxia === "Sí") transitionText += ` Asfixia perinatal${a.therapeuticHypothermia === "Sí" ? ", con indicación de hipotermia terapéutica" : ""}.`;
+
+    // Tabla perinatal a dos columnas, generada desde el esquema
+    const perinatalSections = S ? S.ADMISSION_SECTIONS.filter((sec) => ["embarazo", "serologias", "parto"].includes(sec.id)) : [];
+    const idPairs = S ? schemaPairs(p, S.ADMISSION_SECTIONS.filter((sec) => sec.id === "identificacion"), [
+      "hc", "rnDni", "dniStatus", "motherName", "motherDni", "fatherName", "birthDate", "birthTime", "admitDate", "sex",
+      "gaWeeks", "gaDays", "birthWeight", "birthLength", "birthHc", "tempC", "baseExcess", "idBand"
+    ]) : [];
+    const perinatalTable = twoColumnTable([...idPairs, ...schemaPairs(p, perinatalSections)]);
 
     const dxLines = (a.diagnoses || []).length
-      ? a.diagnoses.map((c, idx) => `${idx + 1}. ${lookupDx(c)}`).join("\n")
+      ? a.diagnoses.map((c, idx) => `${idx + 1}. ${lookupDx(c)}${idx === 0 ? " (principal)" : ""}`).join("\n")
       : "1. Sin diagnósticos consignados.";
 
     const ind = [
-      `1. Ingreso a sector ${p.sector || "(sin asignar)"} en incubadora / servocuna con control térmico.`,
-      "2. Monitorización multiparamétrica continua (FC, FR, SatO2).",
+      `Ingreso a sector ${p.sector || "(sin asignar)"} en incubadora / servocuna con control térmico.`,
+      "Monitorización multiparamétrica continua (FC, FR, SatO2).",
       ga === null
-        ? "3. Soporte y controles según evaluación clínica (edad gestacional sin registrar)."
+        ? "Soporte y controles según evaluación clínica (edad gestacional sin registrar)."
         : ga < 32
-          ? "3. Soporte respiratorio no invasivo/invasivo según protocolo de prematurez y control gasométrico."
-          : "3. Control clínico evolutivo de signos vitales y glucemia según protocolo."
+          ? "Soporte respiratorio no invasivo/invasivo según protocolo de prematurez y control gasométrico."
+          : "Control clínico evolutivo de signos vitales y glucemia según protocolo."
     ];
-    if (kaiser.ready && kaiser.posterior >= 3.0) {
-      ind.push(`4. Según Kaiser 2024 (riesgo posterior ${kaiser.posterior}/1000): ${kaiser.recommendation}`);
-    }
+    if (kaiser.ready && kaiser.posterior >= 3.0) ind.push(`Según Kaiser 2024 (riesgo posterior ${kaiser.posterior}/1000): ${kaiser.recommendation}`);
+    // Indicaciones que se derivan de las serologías maternas reactivas
+    if (fieldIs(p, "chagas", "Reactiva")) ind.push("Madre con serología reactiva para Chagas: solicitar micrométodo (parasitológico directo) al RN.");
+    if (fieldIs(p, "vdrl", "Reactiva")) ind.push("Madre con VDRL reactiva: VDRL del RN y evaluación de sífilis congénita.");
+    if (fieldIs(p, "hivSerology", "Reactiva")) ind.push("Madre con HIV reactivo: iniciar profilaxis antirretroviral del RN según protocolo.");
+    if (fieldIs(p, "hbsag", "Reactiva")) ind.push("Madre con HBsAg reactivo: gammaglobulina anti-hepatitis B y vacuna en las primeras 12 h.");
+    if (fieldIs(p, "toxo", "IgM reactiva (sospecha de infección aguda)")) ind.push("Toxoplasmosis materna aguda sospechada: evaluación del RN (serología y fondo de ojo).");
 
-    const lines = [
-      "NOTA DE INGRESO · SERVICIO DE NEONATOLOGÍA",
+    return compactLines([
+      "INGRESO · UNIDAD DE NEONATOLOGÍA",
       "================================================================",
-      `Paciente: ${p.fullName}          ID: ${p.id}`,
-      `HC: ${valOrMissing(p.hc)}        Sexo: ${sexLabel(p.sex)}`,
+      `Paciente: ${p.fullName}          ID: ${p.id}          HC: ${valOrMissing(p.hc)}`,
+      `Sexo: ${sexLabel(p.sex)}   DNI RN: ${a.dniStatus === "Con DNI" ? valOrMissing(a.rnDni) : fieldText(p, "dniStatus")}   Madre: ${valOrMissing(p.motherName)} (DNI ${valOrMissing(p.motherDni)})`,
       `Nacimiento: ${valOrMissing(fmtDate(p.birthDate))} ${valOrMissing(p.birthTime)}   Ingreso: ${valOrMissing(fmtDate(p.admitDate))}`,
       "",
       "1. ANTECEDENTES PERINATALES",
-      `Edad materna: ${valOrMissing(a.maternalAge, "años")} | Paridad: ${valOrMissing(a.parity)}${a.parityDetail ? ` (${a.parityDetail})` : ""}`,
-      `Corticoides antenatales: ${valOrMissing(a.antenatalSteroids)} | MgSO4: ${valOrMissing(a.mgso4)}`,
-      `Diabetes materna: ${valOrMissing(a.diabetes)}${a.diabetes === "Sí" ? ` (${valOrMissing(a.diabetesType)}, ${valOrMissing(a.diabetesTx)}, HbA1c ${valOrMissing(a.hba1c)})` : ""}`,
-      `RPO: ${valOrMissing(a.rpo)}${a.rpo === "Sí" ? ` (${valOrMissing(a.rpoHours, "h")} · Corioamnionitis: ${valOrMissing(a.chorio)})` : ""} | EGB: ${valOrMissing(a.gbs)}`,
+      perinatalTable || " Sin antecedentes registrados.",
       "",
-      "2. ANAMNESIS Y ANTROPOMETRÍA AL NACER",
-      `Edad gestacional: ${ga === null ? "Sin responder" : `${fmtGa(p.gaWeeks, p.gaDays)} semanas`} · Procedencia: ${valOrMissing(a.origin)} · Temperatura de ingreso: ${valOrMissing(a.tempC, "°C")}.`,
-      `Peso al nacer: ${fmtWeight(p.birthWeight)} · Fenton 2025: ${fenton.ready ? `${fenton.classification} (Z ${fenton.zScore}, P${fenton.percentile})` : `no calculable (${fenton.classification})`}.`,
-      `Talla: ${valOrMissing(p.birthLength, "cm")} · Perímetro cefálico: ${valOrMissing(p.birthHc, "cm")}.`,
+      "2. ANAMNESIS",
+      `Recién nacido de sexo ${sexLabel(p.sex).toLowerCase()}, edad gestacional ${ga === null ? "sin responder" : fmtGa(p.gaWeeks, p.gaDays) + " semanas"}, peso al nacer ${fmtWeight(p.birthWeight)} (Fenton 2025: ${fenton.ready ? `${fenton.classification}, Z ${fenton.zScore}, P${fenton.percentile}` : "no calculable"}).`,
+      birthNarrative(p),
       transitionText,
       crib.applicable
-        ? (crib.ready ? `Score CRIB II calculado: ${crib.score} puntos (${crib.level}).` : `Score CRIB II: no calculable, falta ${crib.missing.join(", ")}.`)
+        ? (crib.ready ? `Score CRIB II: ${crib.score} puntos (${crib.level}).` : `Score CRIB II: no calculable, falta ${crib.missing.join(", ")}.`)
         : "",
       kaiser.applicable
         ? (kaiser.ready ? `Calculadora Kaiser 2024: riesgo basal ${kaiser.riskBirth}/1000 · riesgo posterior ${kaiser.posterior}/1000.` : `Calculadora Kaiser 2024: no calculable, falta ${kaiser.missing.join(", ")}.`)
         : "",
       "",
       "3. EXAMEN FÍSICO DE INGRESO",
+      `Temperatura de ingreso: ${valOrMissing(a.tempC, "°C")} · Talla: ${valOrMissing(p.birthLength, "cm")} · Perímetro cefálico: ${valOrMissing(p.birthHc, "cm")}`,
       "Estado general y piel: _____",
       "Respiratorio y cardiovascular: _____",
       "Abdomen y neurológico: _____",
@@ -561,13 +664,11 @@
       dxLines,
       "",
       "5. INDICACIONES DE INGRESO",
-      ...ind,
+      ...ind.map((t, i) => `${i + 1}. ${t}`),
       "",
       "----------------------------------------------------------------",
       "Borrador generado por la aplicación. Requiere revisión y validación médica antes de archivarse en la ficha."
-    ].filter((x) => x !== "");
-
-    return lines.join("\n");
+    ]);
   }
 
   function generateEpicrisisDraft(p) {
@@ -577,74 +678,106 @@
     const rop = deriveRopWorst(p);
     const stay = getPatientStayDays(p);
     const d = p.discharge;
+    const h = p.hosp;
+    const S = schemaRef();
+    const deceased = d.condition === "Fallecido";
 
-    const iaasTxt = (p.hosp.iaasEpisodes || []).length
-      ? p.hosp.iaasEpisodes.map((e) => `Día ${e.day}: ${e.syndrome} (${e.germ}; ${e.abx1}${e.abx2 ? " + " + e.abx2 : ""}, ${e.days} d)`).join("; ")
-      : (p.hosp.iaasCoverage === "completa" ? "Sin episodios de IAAS registrados (cronología completa)." : "Sin episodios cargados (cronología incompleta).");
+    const iaasTxt = (h.iaasEpisodes || []).length
+      ? h.iaasEpisodes.map((e) => `Día ${e.day}: ${e.syndrome} (${e.germ}; ${e.abx1}${e.abx2 ? " + " + e.abx2 : ""}, ${e.days} d)`).join("; ")
+      : (h.iaasCoverage === "completa" ? "Sin episodios de IAAS (cronología completa)." : "Sin episodios cargados (cronología incompleta).");
 
-    const surgTxt = (p.hosp.surgeries || []).length
-      ? p.hosp.surgeries.map((s) => `Día ${s.day}: ${s.procedure} (${s.outcome})`).join("; ")
+    const surgTxt = (h.surgeries || []).length
+      ? h.surgeries.map((x) => `Día ${x.day}: ${x.procedure} (${x.outcome})`).join("; ")
       : "Sin cirugías registradas.";
 
-    // Sin eventos cargados no se informan «0 días»: se dice que no hay registros.
     const respLines = r.eventCount
       ? [
           `Días acumulados: O2 ${r.totals.o2} d · Cánula bajo flujo ${r.totals.cn} d · Cánula alto flujo ${r.totals.cnaf} d · CPAP ${r.totals.cpap} d · VNI ${r.totals.vni} d · VMC ${r.totals.vmc} d · VAFO ${r.totals.vafo} d.`,
-          `FiO2 máx 24h: ${r.maxFio224 ? r.maxFio224 + "%" : "Sin dato"} | O2 día 28: ${r.o2Day28} | O2 36 sem: ${r.o2At36w}.`
+          `FiO2 máx primeras 24 h: ${r.maxFio224 ? r.maxFio224 + "%" : "Sin dato"} | O2 día 28: ${r.o2Day28} | O2 a las 36 sem: ${r.o2At36w}.`
         ]
       : [r.complete ? "Sin soporte respiratorio (cronología completa al corte)." : "Sin eventos respiratorios registrados (cronología incompleta)."];
-    const nutrLine = (p.hosp.nutrEvents || []).length
+
+    const nutrLine = (h.nutrEvents || []).length
       ? `Días de NPT: ${n.nptDays} d | Inicio enteral: ${n.enteralStartDay !== null ? "DDV " + n.enteralStartDay : "Sin dato"} | 100 cc/kg/d: ${n.day100cc !== null ? "DDV " + n.day100cc : "Sin dato"} | Fortificación: ${n.fortificationDay !== null ? "DDV " + n.fortificationDay : "Sin dato"}.`
       : "Sin eventos nutricionales registrados.";
-    const transfCount = (p.hosp.transfusions || []).length;
 
-    const dxOut = (d.diagnoses && d.diagnoses.length ? d.diagnoses : p.admission.diagnoses || [])
-      .map((code, i) => `${i + 1}. ${lookupDx(code)}`).join("\n");
+    const vertical = [];
+    if (fieldIs(p, "chagas", "Reactiva")) vertical.push(`Chagas congénito: ${fieldText(p, "chagasRn")}`);
+    if (fieldIs(p, "vdrl", "Reactiva")) vertical.push(`Sífilis congénita: ${fieldText(p, "syphilisRn")}`);
+    if (fieldIs(p, "hivSerology", "Reactiva")) vertical.push(`Profilaxis HIV: ${fieldText(p, "hivProphylaxis")}`);
+    if (fieldIs(p, "hbsag", "Reactiva")) vertical.push(`Profilaxis hepatitis B: ${fieldText(p, "hbvProphylaxis")}`);
 
-    return [
-      "EPICRISIS NEONATAL · SERVICIO DE NEONATOLOGÍA",
+    const perinatal = S ? twoColumnTable(schemaPairs(p, S.ADMISSION_SECTIONS.filter((sec) => ["embarazo", "serologias", "parto"].includes(sec.id)))) : "";
+    const admDx = p.admission.diagnoses || [];
+    const dxOut = (d.diagnoses && d.diagnoses.length ? d.diagnoses : admDx).map((code, i) => `${i + 1}. ${lookupDx(code)}`).join("\n");
+
+    const outcome = deceased
+      ? [
+          "10. FALLECIMIENTO",
+          `Fecha: ${valOrMissing(fmtDate(d.date))} · Días de vida: ${p.birthDate && d.date ? diffDays(p.birthDate, d.date) : "Sin responder"} · Lugar: ${fieldText(p, "deathPlace")}.`,
+          `Causa básica: ${fieldText(p, "deathCause")}${d.deathImmediate ? ` · Causa inmediata: ${d.deathImmediate}` : ""}${d.autopsy ? ` · Autopsia: ${fieldText(p, "autopsy")}` : ""}.`
+        ]
+      : [
+          "10. CONDICIÓN AL EGRESO",
+          `Condición: ${fieldText(p, "condition")}${d.destination ? ` (${d.destination})` : ""} | Peso: ${valOrMissing(d.weightG, "g")} | Talla: ${valOrMissing(d.lengthCm, "cm")} | PC: ${valOrMissing(d.hcCm, "cm")}.`,
+          `Alimentación: ${fieldText(p, "feeding")} | Oxígeno domiciliario: ${fieldText(p, "homeO2")}.`,
+          `Pesquisas: FEI ${fieldText(p, "screenFei")} · OEA ${fieldText(p, "screenOea")} · Oximetría ${fieldText(p, "screenOximetry")} · Reflejo rojo ${fieldText(p, "screenRedReflex")}.`,
+          `Vacunas: BCG ${fieldText(p, "vacBcg", valOrMissing(d.vaccines))} · Hepatitis B ${fieldText(p, "vacHbv")}.`
+        ];
+
+    return compactLines([
+      "EPICRISIS NEONATAL · UNIDAD DE NEONATOLOGÍA",
       "================================================================",
-      `Paciente: ${p.fullName} | ID: ${p.id} | HC: ${valOrMissing(p.hc)}`,
-      `EG: ${fmtGa(p.gaWeeks, p.gaDays)}${num(p.gaWeeks) !== null ? " sem" : ""} | Peso nacimiento: ${fmtWeight(p.birthWeight)} | Estadía: ${p.admitDate || p.birthDate ? `${stay} días` : "Sin responder (falta fecha de ingreso)"}`,
-      `Ingreso: ${valOrMissing(fmtDate(p.admitDate))} | Egreso: ${valOrMissing(fmtDate(d.date))} | Condición: ${valOrMissing(d.condition)}`,
+      "1. DATOS DEL PACIENTE Y DE LA HOSPITALIZACIÓN",
+      `Paciente: ${p.fullName} | ID: ${p.id} | HC: ${valOrMissing(p.hc)} | Sexo: ${sexLabel(p.sex)}`,
+      `EG: ${fmtGa(p.gaWeeks, p.gaDays)}${num(p.gaWeeks) !== null ? " sem" : ""} | Peso al nacer: ${fmtWeight(p.birthWeight)} | Estadía: ${p.admitDate || p.birthDate ? `${stay} días` : "Sin responder (falta fecha de ingreso)"}`,
+      `Ingreso: ${valOrMissing(fmtDate(p.admitDate))} | Egreso: ${valOrMissing(fmtDate(d.date))} | Procedencia: ${fieldText(p, "origin")}`,
       "",
-      "1. EVOLUCIÓN RESPIRATORIA",
+      "2. ANTECEDENTES PERINATALES",
+      perinatal || " Sin antecedentes registrados.",
+      "",
+      "3. MOTIVO Y DIAGNÓSTICOS DE INGRESO",
+      admDx.length ? `Motivo de ingreso: ${lookupDx(admDx[0])}.` : "Motivo de ingreso: Sin responder.",
+      admDx.length > 1 ? `Otros diagnósticos de ingreso: ${admDx.slice(1).map(lookupDx).join("; ")}.` : "",
+      "",
+      "4. EVOLUCIÓN RESPIRATORIA",
       `Cobertura de cronología: ${r.complete ? "Completa hasta el corte" : "Incompleta"}.`,
-      `SDR: ${valOrMissing(p.hosp.sdr)}${p.hosp.surfactantDoses ? ` (Surfactante: ${p.hosp.surfactantDoses} dosis, vía ${p.hosp.surfactantRoute})` : ""}. Neumotórax: ${valOrMissing(p.hosp.pneumothorax)}.`,
+      `SDR: ${fieldText(p, "sdr")}${h.sdr === "Sí" ? ` (surfactante: ${valOrMissing(h.surfactantDoses, "dosis")}, ${fieldText(p, "surfactantRoute")})` : ""}. Neumotórax: ${fieldText(p, "pneumothorax")}.`,
       ...respLines,
       `DBP Jensen: ${r.jensen} | DBP Bancalari: ${r.bancalari}.`,
       "",
-      "2. EVOLUCIÓN CARDIOVASCULAR",
-      `Ecocardiograma: ${valOrMissing(p.hosp.cardio.echo)} | DAP: ${valOrMissing(p.hosp.cardio.dap)}${p.hosp.cardio.dap === "Sí" ? ` (Tratamiento médico: ${valOrMissing(p.hosp.cardio.dapMed)} · Cierre invasivo: ${valOrMissing(p.hosp.cardio.dapInvasive)})` : ""}.`,
+      "5. EVOLUCIÓN CARDIOVASCULAR",
+      `Ecocardiograma: ${fieldText(p, "cardio.echo")}${h.cardio.echo === "Sí" ? ` | Cardiopatía congénita: ${fieldText(p, "cardio.chd")} | DAP: ${fieldText(p, "cardio.dap")}` : ""}${h.cardio.dap === "Sí" ? ` (tratamiento: ${fieldText(p, "cardio.dapMed")}; cierre invasivo: ${fieldText(p, "cardio.dapInvasive")})` : ""}.`,
       "",
-      "3. EVOLUCIÓN INFECCIOSA",
-      `Sepsis precoz: ${valOrMissing(p.hosp.earlySepsis)}. Episodios: ${iaasTxt}`,
+      "6. EVOLUCIÓN INFECCIOSA",
+      `Sepsis precoz: ${fieldText(p, "earlySepsis")}${h.earlySepsis === "Sí" ? ` (${fieldText(p, "earlySepsisCulture")}${h.earlySepsisGerm ? ", " + h.earlySepsisGerm : ""})` : ""}.`,
+      `Infecciones asociadas a cuidados: ${iaasTxt}`,
+      vertical.length ? `Transmisión vertical: ${vertical.join(" · ")}.` : "",
       "",
-      "4. NUTRICIÓN, CRECIMIENTO Y DIGESTIVO",
+      "7. EVOLUCIÓN NUTRICIONAL Y GASTROINTESTINAL",
       nutrLine,
-      `NEC: ${valOrMissing(p.hosp.nec)}.`,
+      `Peso mínimo: ${valOrMissing(h.minWeight, "g")}${h.minWeightDay !== "" && h.minWeightDay !== undefined ? ` (DDV ${h.minWeightDay})` : ""}. NEC: ${fieldText(p, "nec")}${h.nec === "Sí" ? ` (Bell ${fieldText(p, "necStage")}; cirugía: ${fieldText(p, "necSurgery")})` : ""}. Perforación intestinal espontánea: ${fieldText(p, "sip")}.`,
       "",
-      "5. NEUROLÓGICO Y OFTALMOLÓGICO (ROP)",
-      `Ecografía cerebral: ${valOrMissing(p.hosp.neuro.cranialUs)} | RMN: ${valOrMissing(p.hosp.neuro.mri)} | Hidrocefalia: ${valOrMissing(p.hosp.neuro.hydrocephalus)}.`,
-      `ROP: ${rop.summary}.`,
+      "8. EVOLUCIÓN NEUROLÓGICA Y OFTALMOLÓGICA",
+      `Apneas: ${fieldText(p, "neuro.apnea")} | Convulsiones: ${fieldText(p, "neuro.seizures")} | Ecografía cerebral: ${fieldText(p, "neuro.cranialUs")} | RMN: ${fieldText(p, "neuro.mri")}.`,
+      `Hidrocefalia: ${fieldText(p, "neuro.hydrocephalus")}${h.neuro.hydrocephalus === "Sí" ? ` (${fieldText(p, "neuro.hydroSurgery")})` : ""}. ROP: ${rop.summary}.`,
       "",
-      "6. ACCESOS VASCULARES, TRANSFUSIONES Y CIRUGÍAS",
-      `Catéteres centrales: ${c.count ? `${c.count} episodios (${c.totalDays} días-catéter totales)` : "sin registros"}. Transfusiones: ${transfCount || "sin registros"}.`,
+      "9. ACCESOS VASCULARES Y OTRAS TERAPIAS",
+      `Catéteres centrales: ${c.count ? `${c.count} episodios (${c.totalDays} días-catéter)` : "sin registros"}. Transfusiones: ${(h.transfusions || []).length || "sin registros"}.`,
       `Procedimientos quirúrgicos: ${surgTxt}`,
       "",
-      "7. CONDICIÓN AL EGRESO, PESQUISAS E INDICACIONES",
-      `Destino: ${valOrMissing(d.destination)} | Peso egreso: ${valOrMissing(d.weightG, "g")} | Alimentación: ${valOrMissing(d.feeding)} | O2 domiciliario: ${valOrMissing(d.homeO2)}.`,
-      `Pesquisas: FEI ${valOrMissing(d.screenFei)} · OEA ${valOrMissing(d.screenOea)} · Oximetría ${valOrMissing(d.screenOximetry)} · Reflejo rojo ${valOrMissing(d.screenRedReflex)}.`,
-      `Vacunas: BCG ${valOrMissing(d.vacBcg || d.vaccines)} · Hepatitis B ${valOrMissing(d.vacHbv)}.`,
-      `Medicación al alta: ${valOrMissing(d.medications)}`,
-      `Indicaciones: ${valOrMissing(d.indications)}`,
+      ...outcome,
       "",
-      "8. DIAGNÓSTICOS DE EGRESO (CIE-10)",
+      "11. DIAGNÓSTICOS DE EGRESO (CIE-10)",
       dxOut || "1. Sin diagnósticos consignados.",
+      "",
+      deceased ? "12. INDICACIONES" : "12. TRATAMIENTO E INDICACIONES AL ALTA",
+      deceased ? `${valOrMissing(d.indications)}` : `Medicación: ${valOrMissing(d.medications)}`,
+      deceased ? "" : `Indicaciones: ${valOrMissing(d.indications)}`,
       "",
       "----------------------------------------------------------------",
       "Borrador generado por la aplicación. Requiere revisión y validación médica antes de archivarse en la ficha."
-    ].join("\n");
+    ]);
   }
 
   function computeStatistics(patients, filters) {
@@ -718,6 +851,13 @@
       if (ga !== null && ga >= 35) return "na";
       return null;
     });
+    const earlySepsis = tally((p) => (p.hosp.earlySepsis === "Sí" ? true : p.hosp.earlySepsis === "No" ? false : null));
+    const lateSepsis = tally((p) => {
+      const eps = (p.hosp.iaasEpisodes || []).filter((e) => !/precoz/i.test(e.syndrome || ""));
+      if (eps.some((e) => /sepsis|bacteriemia/i.test(e.syndrome || ""))) return true;
+      if (p.hosp.iaasCoverage === "completa") return false;
+      return null;
+    });
     const iaas = tally((p) => {
       if (p.hosp.iaasCoverage !== "completa" && !(p.hosp.iaasEpisodes || []).length) return null;
       return (p.hosp.iaasEpisodes || []).some((e) => !/precoz/i.test(e.syndrome || ""));
@@ -761,6 +901,8 @@
       nec,
       dap,
       iaas,
+      earlySepsis,
+      lateSepsis,
       totalCatheterDays,
       clabsiEvents,
       clabsiRate1000: totalCatheterDays ? Number(((clabsiEvents / totalCatheterDays) * 1000).toFixed(1)) : null,
@@ -793,6 +935,7 @@
     admissionSnapshot,
     epicrisisSnapshot,
     computeDraftDiff,
+    fieldText,
     carryOverCompletedFields,
     generateAdmissionDraft,
     generateEpicrisisDraft,

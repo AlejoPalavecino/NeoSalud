@@ -49,15 +49,15 @@ Base `main` · rama `maqueta-validacion` · un commit por corte, probado en el n
 - **Blocker:** none
 
 ### TASK-004 — Borradores, Excel de 7 hojas y tasas
-- **State:** IN_PROGRESS
+- **State:** DONE
 - **Depends on:** TASK-002, TASK-003
 - **Owner:** orchestrator
 - **Acceptance:** La epicrisis incluye antecedentes perinatales, motivo de ingreso, tratamiento al alta y fallecimiento; el ingreso muestra la tabla perinatal a dos columnas; la vista previa del Excel tiene 7 hojas, entre ellas «Cómo leer los valores» y «Tasas de morbilidad»; las estadísticas separan sepsis precoz y tardía.
-- **Evidence:** none
+- **Evidence:** 2026-11-24 · Node + navegador (:5173). Borrador de ingreso con tabla perinatal a dos columnas generada del esquema (núcleo vacío = «Sin responder»; «A confirmar» solo si tiene dato), anamnesis sin frases vacías, decimales con coma e indicaciones derivadas de serologías reactivas (Chagas → micrométodo). Epicrisis con 12 secciones de la referencia (datos, antecedentes, motivo de ingreso, 6 sistemas, egreso o fallecimiento, diagnósticos, tratamiento). Desfasaje sobre las 75/63 variables del esquema: Chagas en ingreso firmado → banner «no refleja… Chagas (Sin responder → Reactiva)»; enmienda + regenerar → sin desfasaje. Excel 7 hojas (incluye «Cómo leer los valores», «Tasas de morbilidad», diccionario con 137 variables: 104 núcleo, 25 a confirmar, 8 derivadas) y diccionario descargable en CSV. Estadísticas: sepsis precoz 2/8 y tardía 1/6 por separado. Corregido: tras «Reiniciar maqueta» los documentos firmados quedaban sin texto ni snapshot. Sin errores en 9 pacientes × vistas y 7 hojas.
 - **Blocker:** none
 
 ### TASK-005 — Datos demo, importación simulada y admin para el cliente
-- **State:** PLANNED
+- **State:** IN_PROGRESS
 - **Depends on:** TASK-003
 - **Owner:** orchestrator
 - **Acceptance:** Unos 30 pacientes ficticios con ocupación y tasas plausibles, conservando los casos guía; la importación ofrece Excel/CSV y PDF/Word simulados con revisión campo por campo; Admin muestra usuarios, sectores y camas, catálogos y parámetros institucionales, sin infraestructura.

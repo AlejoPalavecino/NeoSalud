@@ -873,7 +873,7 @@
           ` : ""}
 
           ${admSigned ? `
-            <div class="banner banner-ok">Ingreso validado por <strong>${esc(p.admissionDraft.validatedBy)}</strong> el <span class="mono">${esc(ENG.fmtDate(p.admissionDraft.validatedAt))}</span>. Documento de solo lectura.</div>
+            <div class="banner banner-ok"><div>Ingreso validado por <strong>${esc(p.admissionDraft.validatedBy)}</strong> el <span class="mono">${esc(ENG.fmtDate(p.admissionDraft.validatedAt))}</span>. Documento de solo lectura.</div></div>
           ` : ""}
 
           ${draftVersionsHtml("admission", p.admissionDraft)}
@@ -1267,7 +1267,7 @@
           ` : ""}
 
           ${epiSigned ? `
-            <div class="banner banner-ok">Epicrisis validada por <strong>${esc(p.epicrisisDraft.validatedBy)}</strong> el <span class="mono">${esc(ENG.fmtDate(p.epicrisisDraft.validatedAt))}</span>. Documento de solo lectura.</div>
+            <div class="banner banner-ok"><div>Epicrisis validada por <strong>${esc(p.epicrisisDraft.validatedBy)}</strong> el <span class="mono">${esc(ENG.fmtDate(p.epicrisisDraft.validatedAt))}</span>. Documento de solo lectura.</div></div>
           ` : ""}
 
           ${!epiSigned && epiMissing.length ? `
@@ -1447,7 +1447,9 @@
       ["HIV grado III–IV", st.hivSevere],
       ["Enterocolitis necrotizante (NEC)", st.nec],
       ["Ductus arterioso permeable (DAP)", st.dap],
-      ["Infección asociada a cuidados (IAAS)", st.iaas]
+      ["Sepsis precoz (< 72 h)", st.earlySepsis],
+      ["Sepsis tardía (> 72 h)", st.lateSepsis],
+      ["Infección asociada a cuidados (IAAS, cualquier foco)", st.iaas]
     ];
 
     function triRow(label, m) {
@@ -1565,6 +1567,42 @@
     `;
   }
 
+  // Diccionario de datos: variables del esquema + variables derivadas por el motor.
+  function dictionaryRows() {
+    const modules = [["Ingreso", SCHEMA.ADMISSION_SECTIONS], ["Hospitalización", SCHEMA.HOSP_SECTIONS], ["Egreso", SCHEMA.DISCHARGE_SECTIONS]];
+    const rows = [];
+    for (const [module, sections] of modules) {
+      for (const sec of sections) {
+        for (const f of sec.fields) {
+          const domain = f.type === "select"
+            ? optionPairs(f).map(([, lab]) => lab).join(" | ")
+            : f.type === "number" ? [f.min !== undefined ? `mín ${f.min}` : "", f.max !== undefined ? `máx ${f.max}` : ""].filter(Boolean).join(" · ") || "Numérico"
+              : f.type === "date" ? "dd/mm/aaaa" : "Texto libre";
+          const cond = f.showIf ? ` · Solo si «${(SCHEMA.FIELD_BY_KEY[f.showIf.key] || {}).label || f.showIf.key}» ${f.showIf.notEq ? "≠ " + f.showIf.notEq : "= " + (f.showIf.eq || f.showIf.in.join(" / "))}` : "";
+          rows.push({ key: f.key, label: f.label, module: `${module} · ${sec.title}`, type: f.type, domain: domain + cond, status: f.core ? "Núcleo" : "A confirmar" });
+        }
+      }
+    }
+    const derived = [
+      ["fenton_clasificacion", "Fenton 2025: PEG / AEG / GEG, Z-score y percentil", "Derivada de EG, sexo y peso al nacer"],
+      ["crib2_puntaje", "Score CRIB II", "Derivada si EG ≤ 32 sem o peso ≤ 1.500 g; requiere temperatura y exceso de base"],
+      ["kaiser_riesgo_posterior", "Kaiser 2024: riesgo de sepsis precoz", "Derivada si EG ≥ 35 sem; usa la incidencia local institucional"],
+      ["dias_o2 / cpap / vni / vmc / vafo", "Días por modalidad respiratoria", "Derivada de la línea de tiempo respiratoria"],
+      ["dbp_jensen / dbp_bancalari", "Clasificación de displasia broncopulmonar", "Derivada si EG < 32 sem y cronología completa"],
+      ["dias_npt / dia_100cc_kg", "Hitos nutricionales", "Derivada de la línea de tiempo nutricional"],
+      ["dias_cateter", "Días-catéter por tipo", "Derivada de colocación y retiro"],
+      ["rop_peor_estadio", "Peor estadio de ROP", "Derivada de los controles oftalmológicos"]
+    ];
+    for (const [key, label, domain] of derived) rows.push({ key, label, module: "Derivadas (no se cargan)", type: "derivada", domain, status: "Derivada" });
+    return rows;
+  }
+
+  // Variables núcleo visibles (rama abierta) que siguen sin responder en el ingreso.
+  function coreMissingFields(p) {
+    return SCHEMA.ADMISSION_SECTIONS.flatMap((sec) => sec.fields)
+      .filter((f) => f.core && SCHEMA.conditionMet(p, f) && f.onlyWhen !== "kaiser" && SCHEMA.readField(p, f) === "");
+  }
+
   // ===================== VIEW 8: EXPORTACIÓN =====================
   function viewExportacion() {
     const r = activeRole();
@@ -1574,9 +1612,10 @@
     const debtRows = [];
     for (const p of state.patients) {
       if (p.status === "ingreso_incompleto") debtRows.push([p.id, p.fullName, "Ingreso sin validar", "Completar y firmar nota de ingreso"]);
-      if (p.gaWeeks < 32 && p.hosp.respCoverage !== "completa") debtRows.push([p.id, p.fullName, "Cronología respiratoria abierta", "Confirmar cobertura al corte clínico"]);
+      if (ENG.num(p.gaWeeks) !== null && ENG.num(p.gaWeeks) < 32 && p.hosp.respCoverage !== "completa") debtRows.push([p.id, p.fullName, "Cronología respiratoria abierta", "Confirmar cobertura al corte clínico"]);
       if (ENG.computeDraftDiff(p, "admission").length) debtRows.push([p.id, p.fullName, "Borrador de ingreso desfasado", "Regenerar borrador tras edición"]);
-      if (!p.admission.maternalAge) debtRows.push([p.id, p.fullName, "Edad materna sin responder", "Completar antecedente materno"]);
+      const coreMissing = coreMissingFields(p);
+      if (coreMissing.length) debtRows.push([p.id, p.fullName, `${coreMissing.length} variables núcleo sin responder`, coreMissing.slice(0, 4).map((f) => f.label).join(", ") + (coreMissing.length > 4 ? "…" : "")]);
     }
 
     let previewHtml = "";
@@ -1588,8 +1627,9 @@
             <tr><td>Institución</td><td>${esc(state.institutionName)}</td></tr>
             <tr><td>Fecha de exportación</td><td class="mono">${ENG.fmtDate(nowStamp())}</td></tr>
             <tr><td>Usuario exportador</td><td>${esc(r.name)} (${esc(r.roleLabel)})</td></tr>
-            <tr><td>Versión de diccionario</td><td class="mono">neosalud-dict-v1.0</td></tr>
-            <tr><td>Cómo leer los valores</td><td>«NA» = Fuera de riesgo (excluido de denominador). «SD» = En riesgo sin dato (deuda de registro). Nunca se imputan omisiones como normalidad.</td></tr>
+            <tr><td>Versión de diccionario</td><td class="mono">neosalud-dict-v2.0 (maqueta)</td></tr>
+            <tr><td>Pacientes incluidos</td><td class="num">${state.patients.length}</td></tr>
+            <tr><td>Lectura de valores</td><td>Ver hoja 3 «Cómo leer los valores».</td></tr>
           </tbody>
         </table>
       `;
@@ -1607,15 +1647,41 @@
           </tbody>
         </table>
       `;
-    } else if (sheet === "diccionario") {
+    } else if (sheet === "como-leer") {
       previewHtml = `
         <table class="clinical-table">
-          <thead><tr><th>Variable</th><th>Tipo</th><th>Regla de derivación / Dominio</th></tr></thead>
+          <thead><tr><th>Valor en la celda</th><th>Qué significa</th><th>Cómo tratarlo en el análisis</th></tr></thead>
           <tbody>
-            <tr><td class="mono">fenton_z_peso</td><td>Numérico</td><td>Derivado automáticamente por Fenton 2025 (EG, sexo, peso g).</td></tr>
-            <tr><td class="mono">kaiser_riesgo_post</td><td>Numérico</td><td>Derivado por Kaiser 2024 solo si EG ≥ 35 sem; NA en menores.</td></tr>
-            <tr><td class="mono">dbp_jensen</td><td>Categórico</td><td>Derivado desde línea respiratoria si EG &lt; 32 sem y cobertura = Completa.</td></tr>
-            <tr><td class="mono">dias_cateter_total</td><td>Entero</td><td>Suma de días de CVU + CAU + PICC + CVC registrados.</td></tr>
+            <tr><td class="mono">Sí / No</td><td>Dato registrado por el equipo</td><td>Entra al numerador (Sí) y al denominador (Sí + No).</td></tr>
+            <tr><td class="mono">NA</td><td>No aplica: el paciente nunca estuvo en riesgo (p. ej. ROP en un RN de término)</td><td>Sale del numerador y del denominador.</td></tr>
+            <tr><td class="mono">SD</td><td>Sin dato: estaba en riesgo y no se consignó</td><td>Deuda de registro. No se cuenta como «No»: se informa aparte.</td></tr>
+            <tr><td class="mono">(vacío)</td><td>Variable sin responder en la ficha</td><td>Nunca se interpreta como normal.</td></tr>
+            <tr><td class="mono">Derivada</td><td>Calculada por la app (Fenton, DBP, días-catéter, etc.)</td><td>No se edita a mano: se corrige el dato de origen.</td></tr>
+          </tbody>
+        </table>
+      `;
+    } else if (sheet === "diccionario") {
+      const dictRows = dictionaryRows();
+      previewHtml = `
+        <p class="field-hint" style="margin:0 0 10px">${dictRows.length} variables: ${dictRows.filter((d) => d.status === "Núcleo").length} núcleo y ${dictRows.filter((d) => d.status === "A confirmar").length} a confirmar con el servicio.</p>
+        <table class="clinical-table">
+          <thead><tr><th>Variable</th><th>Etiqueta</th><th>Módulo</th><th>Tipo</th><th>Valores permitidos / regla</th><th>Estado</th></tr></thead>
+          <tbody>
+            ${dictRows.map((d) => `<tr><td class="mono">${esc(d.key)}</td><td>${esc(d.label)}</td><td>${esc(d.module)}</td><td>${esc(d.type)}</td><td>${esc(d.domain)}</td><td>${d.status === "A confirmar" ? '<span class="badge-confirm">A confirmar</span>' : esc(d.status)}</td></tr>`).join("")}
+          </tbody>
+        </table>
+      `;
+    } else if (sheet === "tasas") {
+      const rates = [
+        ["DBP (< 32 sem)", st.dbp], ["ROP cualquier estadio", st.ropAny], ["ROP grave o tratada", st.ropSevere],
+        ["HIV cualquier grado", st.hivAny], ["HIV grado III–IV", st.hivSevere], ["NEC", st.nec], ["DAP", st.dap],
+        ["Sepsis precoz", st.earlySepsis], ["Sepsis tardía", st.lateSepsis], ["IAAS", st.iaas]
+      ];
+      previewHtml = `
+        <table class="clinical-table">
+          <thead><tr><th>Morbilidad</th><th>Numerador</th><th>Denominador</th><th>Tasa</th><th>NA (fuera de riesgo)</th><th>SD (deuda)</th></tr></thead>
+          <tbody>
+            ${rates.map(([name, t]) => `<tr><td>${esc(name)}</td><td class="num">${t.yes}</td><td class="num">${t.denom}</td><td class="num">${t.rate === null ? "—" : String(t.rate).replace(".", ",") + " %"}</td><td class="num">${t.na}</td><td class="num">${t.missing}</td></tr>`).join("")}
           </tbody>
         </table>
       `;
@@ -1670,8 +1736,8 @@
               <button class="btn btn-secondary btn-sm" type="button" id="btn-exp-json" ${!r.permissions.exportFull || ui.exportLoading ? "disabled" : ""}>${ui.exportLoading === "json" ? '<span class="spinner" aria-hidden="true"></span>Preparando...' : "Descargar JSON"}</button>
             </div>
             <div class="option-tile">
-              <strong>Diccionario de datos versionado (.json)</strong>
-              <p class="field-hint" style="margin:4px 0 14px">Esquema oficial de variables, dominios y reglas de cálculo (v1.0).</p>
+              <strong>Diccionario de datos versionado (.csv)</strong>
+              <p class="field-hint" style="margin:4px 0 14px">Todas las variables con dominio, módulo y estado núcleo / a confirmar. Sirve para revisar con el servicio qué se registra.</p>
               <button class="btn btn-secondary btn-sm" type="button" id="btn-exp-dict" ${ui.exportLoading ? "disabled" : ""}>${ui.exportLoading === "dict" ? '<span class="spinner" aria-hidden="true"></span>Preparando...' : "Descargar diccionario"}</button>
             </div>
           </div>
@@ -1681,18 +1747,20 @@
       <section class="panel">
         <div class="panel-head">
           <div>
-            <h2 class="panel-title">Vista previa de las 5 hojas del Excel Maestro</h2>
-            <p class="panel-sub">En la versión productiva (Next.js + ExcelJS) estas 5 pestañas se empaquetan en un único archivo .xlsx</p>
+            <h2 class="panel-title">Vista previa de las 7 hojas del Excel Maestro</h2>
+            <p class="panel-sub">En la versión productiva estas 7 pestañas se empaquetan en un único archivo .xlsx</p>
           </div>
         </div>
         <div class="panel-body">
           <div class="system-tabs">
             ${[
-              ["metadatos", "1. Metadatos y lectura"],
+              ["metadatos", "1. Metadatos"],
               ["base", "2. Base maestra"],
-              ["diccionario", "3. Diccionario"],
-              ["resumen", "4. Resumen estadístico"],
-              ["errores", `5. Deuda de registro (${debtRows.length})`]
+              ["como-leer", "3. Cómo leer los valores"],
+              ["diccionario", "4. Diccionario de datos"],
+              ["resumen", "5. Resumen estadístico"],
+              ["tasas", "6. Tasas de morbilidad"],
+              ["errores", `7. Errores y deuda de registro (${debtRows.length})`]
             ].map(([k, lbl]) => `<button class="sys-tab ${sheet === k ? "active" : ""}" type="button" data-exp-sheet="${k}">${esc(lbl)}</button>`).join("")}
           </div>
           <div class="table-wrap">${previewHtml}</div>
@@ -2532,12 +2600,12 @@
     const bExpDict = document.getElementById("btn-exp-dict");
     if (bExpDict) {
       bExpDict.onclick = () => runExportWithSpinner("dict", () => {
-        const dict = {
-          version: "neosalud-dict-v1.0",
-          rules: { NA: "Fuera de riesgo (excluido del denominador)", SD: "En riesgo sin dato (deuda de registro)" },
-          calculators: ["Fenton 2025", "Kaiser 2024 (>=35 sem)", "CRIB II (<=32 sem o <=1500 g)", "DBP Jensen", "DBP Bancalari"]
-        };
-        downloadFile("diccionario_datos_neosalud_v1.json", JSON.stringify(dict, null, 2), "application/json");
+        const rows = dictionaryRows();
+        const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
+        const csv = ["variable;etiqueta;modulo;tipo;valores_o_regla;estado"]
+          .concat(rows.map((d) => [d.key, d.label, d.module, d.type, d.domain, d.status].map(q).join(";")))
+          .join("\n");
+        downloadFile("diccionario_datos_neosalud_v2.csv", "\ufeff" + csv, "text/csv;charset=utf-8");
         toast("Diccionario de datos descargado.");
       });
     }
@@ -2851,6 +2919,7 @@
   document.getElementById("drawer-scrim").onclick = closeDrawer;
   document.getElementById("reset-demo-btn").onclick = () => {
     state = DATA.createSeedState();
+    hydrateInitialDrafts();
     ui.selectedPatientId = state.patients[0].id;
     ui.activeBatch = null;
     ui.importStep = 1;
@@ -2867,7 +2936,7 @@
   });
 
   // Seed pre-generated drafts for Alma Rios so Epicrisis/Ingreso look rich out of the box
-  (function hydrateInitialDrafts() {
+  function hydrateInitialDrafts() {
     let changed = false;
     for (const p of state.patients) {
       if (p.admissionDraft.validated && !p.admissionDraft.text) {
@@ -2884,7 +2953,8 @@
       }
     }
     if (changed) saveState();
-  })();
+  }
+  hydrateInitialDrafts();
 
   render();
 })();
