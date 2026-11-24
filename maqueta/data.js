@@ -148,7 +148,7 @@
   ];
 
   // Versión del estado guardado en el navegador: si cambia la estructura, se recarga la demo.
-  const STATE_VERSION = 2;
+  const STATE_VERSION = 3;
 
   // Paciente en blanco: todo lo clínico arranca vacío («Sin responder»). Nunca se completa
   // un dato por defecto, porque se leería como un hallazgo registrado.
@@ -939,6 +939,16 @@
         epicrisisDraft: { text: "", snapshot: null, validated: true, validatedBy: "Dra. Carolina Méndez", validatedAt: "2026-10-17 18:45" }
       }
     ];
+
+    // Casos guía adaptados + cohorte generada (cohort.js), siempre con los mismos datos ficticios.
+    const COHORT = global.NEOSALUD_COHORT;
+    if (COHORT) {
+      patients.forEach((p) => COHORT.patchSeed(p));
+      patients.push(...COHORT.generate(createBlankPatient, patients.length + 1));
+    }
+    // Datos de demo coherentes: ningún subcampo con valor si su pregunta padre lo deja cerrado.
+    const SCH = global.NEOSALUD_SCHEMA;
+    if (SCH) patients.forEach((p) => SCH.discardClosedBranches(p));
 
     const sampleImportBatches = {
       censoSemanal: {

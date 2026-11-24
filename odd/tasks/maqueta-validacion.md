@@ -57,15 +57,15 @@ Base `main` · rama `maqueta-validacion` · un commit por corte, probado en el n
 - **Blocker:** none
 
 ### TASK-005 — Datos demo, importación simulada y admin para el cliente
-- **State:** IN_PROGRESS
+- **State:** DONE
 - **Depends on:** TASK-003
 - **Owner:** orchestrator
 - **Acceptance:** Unos 30 pacientes ficticios con ocupación y tasas plausibles, conservando los casos guía; la importación ofrece Excel/CSV y PDF/Word simulados con revisión campo por campo; Admin muestra usuarios, sectores y camas, catálogos y parámetros institucionales, sin infraestructura.
-- **Evidence:** none
+- **Evidence:** 2026-11-24 · Node + navegador (:5173). cohort.js: 8 casos guía adaptados + 22 generados con semilla fija → 30 pacientes, 19 internados (70 % de 27 camas: UCIN 7/8, Intermedios 8/10, Pre-alta 3/6, Aislamiento 1/3), 10 egresos y 1 fallecido. Tasas: DBP 2/5 (40 %), ROP 4/9, ROP grave 1/9, HIV 6/16, HIV III–IV 3/16, NEC 2/29, DAP 7/15, sepsis precoz 3/29, tardía 2/25, mortalidad 9,1 %; Fenton 28 AEG / 1 PEG / 1 GEG; 0 subcampos huérfanos. Casos argentinos: sífilis congénita (Aislamiento), Chagas, SUMAR, obras sociales. Importación: pestañas Planilla / Documento; documento simulado con texto resaltado, 17 campos, 4 conflictos, aceptar/rechazar, «aceptar los sin conflicto», confirmación con auditoría y aviso de subcampos que no entran por rama cerrada. Admin sin infraestructura: datos institucionales (Jefatura edita; Planta deshabilitado; incidencia 0,5 → 0,9 cambia Kaiser y queda auditado), sectores y camas, catálogos, perfiles, auditoría. Corregidos: «HIV grado III–IV» contaba cualquier HIV (la regex /III|IV/ coincidía con «HIV»). 30 pacientes × vistas sin errores; móvil 375 px sin desborde.
 - **Blocker:** none
 
 ### TASK-006 — Guion y guía de demo actualizados
-- **State:** PLANNED
+- **State:** IN_PROGRESS
 - **Depends on:** TASK-004, TASK-005
 - **Owner:** orchestrator
 - **Acceptance:** `docs/guia-uso-maqueta.md` y el guion de la maqueta recorren el flujo nuevo e incluyen, para cada pantalla, las preguntas que hay que hacerle al hospital.

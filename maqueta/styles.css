@@ -1758,3 +1758,68 @@ details.form-section[open] > .panel-body {
 .field .textarea {
   min-height: 84px;
 }
+
+/* ===== Importación de documentos: texto con fragmentos resaltados + revisión ===== */
+.doc-review {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.doc-preview {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  overflow: hidden;
+  position: sticky;
+  top: calc(var(--topbar-h) + 12px);
+}
+
+.doc-preview-head {
+  padding: 8px 14px;
+  background: var(--surface-subtle);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.doc-text {
+  margin: 0;
+  padding: 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  color: var(--ink);
+}
+
+.doc-mark {
+  background: #fff3c4;
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+.doc-mark.is-focus {
+  background: #ffd76a;
+  outline: 2px solid #e0a800;
+}
+
+tr[data-doc-focus] { cursor: pointer; }
+tr.row-conflict td { background: var(--warn-bg); }
+
+.logo-slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+@media (max-width: 1040px) {
+  .doc-review { grid-template-columns: minmax(0, 1fr); }
+  .doc-preview { position: static; }
+}

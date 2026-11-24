@@ -17,6 +17,8 @@
     importStep: 1,
     activeBatch: null,
     exportPreviewSheet: "metadatos",
+    importMode: "planilla",
+    docImport: null,
     draftLoading: null,
     importLoading: null,
     exportLoading: null
@@ -201,7 +203,7 @@
       {
         label: "Gestión y datos",
         items: [
-          { id: "importar", label: "Importar Excel / CSV", icon: "upload", count: pendingImport || null },
+          { id: "importar", label: "Importar datos", icon: "upload", count: pendingImport || null },
           { id: "estadisticas", label: "Estadísticas", icon: "chart", count: null },
           { id: "exportacion", label: "Exportación", icon: "download", count: null },
           { id: "configuracion", label: "Admin y auditoría", icon: "settings", count: null }
@@ -234,7 +236,7 @@
       ingreso: "Ficha de ingreso",
       hosp: "Hospitalización y líneas de tiempo",
       epicrisis: "Egreso y epicrisis",
-      importar: "Importación Excel / CSV",
+      importar: "Importar planillas y documentos",
       estadisticas: "Estadísticas e indicadores",
       exportacion: "Exportación y diccionario",
       configuracion: "Administración y auditoría"
@@ -341,7 +343,7 @@
         </div>
         <div class="page-actions">
           ${r.permissions.createPatient ? `<button class="btn btn-primary" type="button" id="btn-new-patient">Crear paciente</button>` : ""}
-          ${r.permissions.importFiles ? `<button class="btn btn-secondary" type="button" data-nav="importar">Importar Excel / CSV</button>` : ""}
+          ${r.permissions.importFiles ? `<button class="btn btn-secondary" type="button" data-nav="importar">Importar datos</button>` : ""}
         </div>
       </div>
 
@@ -1308,6 +1310,251 @@
   }
 
   // ===================== VIEW 6: IMPORTAR EXCEL / CSV =====================
+  // ===================== IMPORTACIÓN SIMULADA DE DOCUMENTOS (PDF / Word) =====================
+  // Simula la extracción por reglas de texto fijas (sin IA): cada campo propuesto muestra el
+  // fragmento del documento del que sale y el médico lo acepta o rechaza uno por uno.
+  const DOC_SAMPLES = [
+    {
+      id: "derivacion",
+      fileName: "Epicrisis_derivacion_Hospital_Zonal.pdf",
+      kind: "PDF · 2 páginas",
+      targetId: "NEO-2026-000012",
+      text: [
+        "HOSPITAL ZONAL DE EZEIZA · SERVICIO DE OBSTETRICIA",
+        "Resumen de derivación neonatal",
+        "",
+        "Madre de 27 años, G2 P1 C0 A0. Embarazo gemelar bicorial biamniótico.",
+        "Controles prenatales: 6 controles en CAPS. Recibió corticoides antenatales: 2 dosis de betametasona.",
+        "Serologías del tercer trimestre: VDRL no reactiva. HIV no reactivo. Chagas no reactivo.",
+        "HBsAg no reactivo. Toxoplasmosis IgG reactiva.",
+        "Parto: cesárea de urgencia por trabajo de parto prematuro. Presentación cefálica.",
+        "Líquido amniótico claro. Apgar 7/9. No requirió reanimación avanzada.",
+        "Se deriva en incubadora de transporte para cuidados intensivos neonatales."
+      ].join("\n"),
+      proposals: [
+        { key: "maternalAge", value: 27, match: "Madre de 27 años", rule: "«Madre de N años»" },
+        { key: "parityDetail", value: "G2 P1 C0 A0", match: "G2 P1 C0 A0", rule: "Fórmula G P C A" },
+        { key: "prenatalCare", value: "Controlado (5 o más controles)", match: "6 controles", rule: "«N controles» con N ≥ 5" },
+        { key: "antenatalSteroids", value: "Completo (2 dosis betametasona)", match: "2 dosis de betametasona", rule: "«2 dosis» + corticoide" },
+        { key: "vdrl", value: "No reactiva", match: "VDRL no reactiva", rule: "«VDRL (no) reactiva»" },
+        { key: "hivSerology", value: "No reactiva", match: "HIV no reactivo", rule: "«HIV (no) reactivo»" },
+        { key: "chagas", value: "No reactiva", match: "Chagas no reactivo", rule: "«Chagas (no) reactivo»" },
+        { key: "hbsag", value: "No reactiva", match: "HBsAg no reactivo", rule: "«HBsAg (no) reactivo»" },
+        { key: "toxo", value: "IgG reactiva (inmune)", match: "Toxoplasmosis IgG reactiva", rule: "«Toxoplasmosis IgG …»" },
+        { key: "deliveryType", value: "Cesárea de urgencia", match: "cesárea de urgencia", rule: "Tipo de parto del catálogo" },
+        { key: "presentation", value: "Cefálica", match: "Presentación cefálica", rule: "«Presentación …»" },
+        { key: "apgar1", value: 7, match: "Apgar 7/9", rule: "«Apgar N/M» → 1 min" },
+        { key: "apgar5", value: 9, match: "Apgar 7/9", rule: "«Apgar N/M» → 5 min" }
+      ]
+    },
+    {
+      id: "obstetrica",
+      fileName: "Nota_obstetrica_sala_de_partos.docx",
+      kind: "Word · 1 página",
+      targetId: "NEO-2026-000004",
+      text: [
+        "NOTA DE SALA DE PARTOS",
+        "",
+        "Paciente de 22 años, primigesta. Edad gestacional por FUM: 35 semanas.",
+        "Rotura prematura de membranas de 20 horas de evolución. Temperatura materna máxima 37,4 °C.",
+        "Hisopado para estreptococo grupo B: positivo. Recibió ampicilina 6 horas antes del parto.",
+        "Parto vaginal espontáneo, presentación cefálica, líquido amniótico meconial.",
+        "VDRL no reactiva · HIV no reactivo · Chagas reactivo · HBsAg no reactivo.",
+        "Recién nacido vigoroso. Apgar 8/9."
+      ].join("\n"),
+      proposals: [
+        { key: "maternalAge", value: 22, match: "Paciente de 22 años", rule: "«Paciente de N años»" },
+        { key: "parity", value: "Primípara", match: "primigesta", rule: "«primigesta» → Primípara" },
+        { key: "gaMethod", value: "FUM confiable", match: "Edad gestacional por FUM", rule: "«por FUM»" },
+        { key: "rpo", value: "Sí", match: "Rotura prematura de membranas", rule: "Mención de RPM" },
+        { key: "rpoHours", value: 20, match: "20 horas de evolución", rule: "«N horas» junto a RPM" },
+        { key: "maternalMaxTemp", value: 37.4, match: "Temperatura materna máxima 37,4 °C", rule: "«Temperatura materna máxima N °C»" },
+        { key: "gbs", value: "Positivo", match: "estreptococo grupo B: positivo", rule: "«estreptococo grupo B: …»" },
+        { key: "maternalAbx", value: "Ampicilina >= 4 h", match: "ampicilina 6 horas antes del parto", rule: "Antibiótico + horas ≥ 4" },
+        { key: "deliveryType", value: "Vaginal espontáneo", match: "Parto vaginal espontáneo", rule: "Tipo de parto del catálogo" },
+        { key: "presentation", value: "Cefálica", match: "presentación cefálica", rule: "«presentación …»" },
+        { key: "amnioticFluid", value: "Meconial", match: "líquido amniótico meconial", rule: "«líquido amniótico …»" },
+        { key: "vdrl", value: "No reactiva", match: "VDRL no reactiva", rule: "«VDRL (no) reactiva»" },
+        { key: "hivSerology", value: "No reactiva", match: "HIV no reactivo", rule: "«HIV (no) reactivo»" },
+        { key: "chagas", value: "Reactiva", match: "Chagas reactivo", rule: "«Chagas (no) reactivo»" },
+        { key: "hbsag", value: "No reactiva", match: "HBsAg no reactivo", rule: "«HBsAg (no) reactivo»" },
+        { key: "apgar1", value: 8, match: "Apgar 8/9", rule: "«Apgar N/M» → 1 min" },
+        { key: "apgar5", value: 9, match: "Apgar 8/9", rule: "«Apgar N/M» → 5 min" }
+      ]
+    }
+  ];
+
+  function startDocImport(sampleId) {
+    const sample = DOC_SAMPLES.find((d) => d.id === sampleId);
+    if (!sample) return;
+    ui.docImport = { sampleId, step: "loading", stepText: "Extrayendo el texto del documento...", pct: 22, decisions: {} };
+    render();
+    const steps = [
+      [450, "Aplicando reglas de reconocimiento de texto (sin IA)...", 58],
+      [900, "Comparando cada valor con la ficha actual del paciente...", 90]
+    ];
+    steps.forEach(([ms, text, pct]) => setTimeout(() => {
+      if (!ui.docImport || ui.docImport.step !== "loading") return;
+      ui.docImport.stepText = text;
+      ui.docImport.pct = pct;
+      render();
+    }, ms));
+    setTimeout(() => {
+      if (!ui.docImport) return;
+      ui.docImport.step = "review";
+      render();
+    }, 1350);
+  }
+
+  // Resalta en el texto del documento los fragmentos de donde salió cada campo.
+  function highlightDocument(text, proposals, focusKey) {
+    let html = esc(text);
+    const seen = new Set();
+    for (const pr of proposals) {
+      if (seen.has(pr.match)) continue;
+      seen.add(pr.match);
+      const m = esc(pr.match);
+      const cls = proposals.some((x) => x.match === pr.match && x.key === focusKey) ? "doc-mark is-focus" : "doc-mark";
+      html = html.replace(m, `<mark class="${cls}">${m}</mark>`);
+    }
+    return html;
+  }
+
+  function docImportHtml(canImport) {
+    const di = ui.docImport;
+    if (!di) {
+      return `
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2 class="panel-title">Importar datos desde un documento</h2>
+              <p class="panel-sub">Epicrisis de derivación, notas de sala de partos o informes en PDF / Word. La app propone campos con reglas de texto fijas (sin IA) y el médico acepta o rechaza cada uno.</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="grid-equal">
+              ${DOC_SAMPLES.map((d) => {
+                const target = state.patients.find((p) => p.id === d.targetId);
+                return `
+                  <div class="option-tile">
+                    <strong style="display:block;color:var(--navy);margin-bottom:4px">${esc(d.fileName)}</strong>
+                    <p class="field-hint" style="margin:0 0 6px">${esc(d.kind)} · ${d.proposals.length} campos reconocibles</p>
+                    <p class="field-hint" style="margin:0 0 14px">Paciente: ${target ? `${esc(target.fullName)} (${esc(target.id)})` : "—"}</p>
+                    <button class="btn btn-primary btn-sm" type="button" data-doc-sample="${d.id}" ${!canImport || !target ? "disabled" : ""}>Procesar documento de ejemplo</button>
+                  </div>`;
+              }).join("")}
+            </div>
+            <p class="field-hint" style="margin:14px 0 0">En la maqueta los documentos son de ejemplo: no se lee ningún archivo de tu equipo.</p>
+          </div>
+        </section>`;
+    }
+
+    const sample = DOC_SAMPLES.find((d) => d.id === di.sampleId);
+    if (di.step === "loading") {
+      return `
+        <section class="loading-card" aria-live="polite">
+          <span class="spinner spinner-lg" aria-hidden="true"></span>
+          <h2 class="loading-title">Procesando ${esc(sample.fileName)}</h2>
+          <p class="loading-step-text">${esc(di.stepText)}</p>
+          <div class="progress-track"><div class="progress-fill" style="width:${di.pct}%"></div></div>
+        </section>`;
+    }
+
+    const p = state.patients.find((x) => x.id === sample.targetId);
+    const rows = sample.proposals.map((pr) => {
+      const f = SCHEMA.FIELD_BY_KEY[pr.key];
+      const current = SCHEMA.readField(p, f);
+      const same = String(current) === String(pr.value);
+      const conflict = current !== "" && !same;
+      return { pr, f, current, same, conflict, decision: same ? "same" : (di.decisions[pr.key] || "pending") };
+    });
+    const accepted = rows.filter((r) => r.decision === "accepted").length;
+    const pendingSafe = rows.filter((r) => r.decision === "pending" && !r.conflict).length;
+
+    if (di.step === "done") {
+      return `
+        <section class="panel">
+          <div class="panel-body">
+            <div class="banner banner-ok"><div><strong>Importación confirmada.</strong> Se incorporaron ${di.appliedCount} campos a la ficha de ${esc(p.fullName)} y quedó registrado en la bitácora de auditoría.</div></div>
+            ${di.discarded && di.discarded.length ? `<div class="banner banner-warn" style="margin-top:10px"><div><strong>No se incorporaron:</strong> ${di.discarded.map(esc).join(", ")}. Su pregunta padre en la ficha no los habilita (por ejemplo, horas de bolsa rota requiere RPM = Sí). Revisalo en la ficha si corresponde.</div></div>` : ""}
+            <div class="page-actions" style="margin-top:12px">
+              <button class="btn btn-primary btn-sm" type="button" data-open-patient="${esc(p.id)}" data-target-route="ingreso">Ver ficha de ingreso</button>
+              <button class="btn btn-secondary btn-sm" type="button" id="btn-doc-reset">Procesar otro documento</button>
+            </div>
+          </div>
+        </section>`;
+    }
+
+    return `
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">Revisión campo por campo · ${esc(sample.fileName)}</h2>
+            <p class="panel-sub">Destino: <strong>${esc(p.fullName)}</strong> (${esc(p.id)}) · identidad verificada por HC + sexo + fecha de nacimiento · ${rows.length} campos reconocidos</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-secondary btn-sm" type="button" id="btn-doc-reset">Descartar</button>
+            <button class="btn btn-secondary btn-sm" type="button" id="btn-doc-accept-safe" ${!pendingSafe || !canImport ? "disabled" : ""}>Aceptar los ${pendingSafe} sin conflicto</button>
+            <button class="btn btn-primary btn-sm" type="button" id="btn-doc-commit" ${!accepted || !canImport ? "disabled" : ""}>Confirmar (${accepted})</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="doc-review">
+            <div class="doc-preview" aria-label="Texto del documento">
+              <div class="doc-preview-head">${esc(sample.fileName)}</div>
+              <pre class="doc-text">${highlightDocument(sample.text, sample.proposals, di.focusKey)}</pre>
+            </div>
+            <div class="table-wrap">
+              <table class="clinical-table">
+                <thead><tr><th>Campo</th><th>En la ficha</th><th>Propuesto</th><th>Regla</th><th>Decisión</th></tr></thead>
+                <tbody>
+                  ${rows.map((r) => `
+                    <tr class="${r.conflict ? "row-conflict" : ""}" data-doc-focus="${esc(r.pr.key)}">
+                      <td><strong>${esc(r.f.label)}</strong>${r.f.core ? "" : ' <span class="badge-confirm">A confirmar</span>'}</td>
+                      <td>${r.current === "" ? '<span class="field-hint">Sin responder</span>' : esc(fieldDisplayValue(r.f, r.current))}</td>
+                      <td><strong>${esc(fieldDisplayValue(r.f, r.pr.value))}</strong>${r.conflict ? '<div class="field-hint" style="color:var(--warn-ink)">Distinto del valor cargado</div>' : ""}</td>
+                      <td class="field-hint">${esc(r.pr.rule)}</td>
+                      <td style="white-space:nowrap">
+                        ${r.decision === "same" ? '<span class="status-pill status-na">Ya coincide</span>' : `
+                          <button class="btn btn-sm ${r.decision === "accepted" ? "btn-primary" : "btn-secondary"}" type="button" data-doc-decision="${esc(r.pr.key)}" data-doc-value="accepted" aria-pressed="${r.decision === "accepted"}" ${!canImport ? "disabled" : ""}>Aceptar</button>
+                          <button class="btn btn-sm ${r.decision === "rejected" ? "btn-danger" : "btn-ghost"}" type="button" data-doc-decision="${esc(r.pr.key)}" data-doc-value="rejected" aria-pressed="${r.decision === "rejected"}" ${!canImport ? "disabled" : ""}>Rechazar</button>`}
+                      </td>
+                    </tr>`).join("")}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>`;
+  }
+
+  function commitDocImport() {
+    const di = ui.docImport;
+    const sample = DOC_SAMPLES.find((d) => d.id === di.sampleId);
+    const p = state.patients.find((x) => x.id === sample.targetId);
+    const applied = [];
+    for (const pr of sample.proposals) {
+      if (di.decisions[pr.key] !== "accepted") continue;
+      const f = SCHEMA.FIELD_BY_KEY[pr.key];
+      const before = SCHEMA.readField(p, f);
+      SCHEMA.writeField(p, f, pr.value);
+      applied.push(`${f.label}: ${before === "" ? "Sin responder" : before} → ${pr.value}`);
+    }
+    const rejected = sample.proposals.filter((pr) => di.decisions[pr.key] === "rejected").length;
+    // Un subcampo aceptado cuya pregunta padre quedó cerrada (p. ej. horas de bolsa rota con RPM = No)
+    // no se guarda: se informa en lugar de descartarlo en silencio.
+    const proposedKeys = new Set(sample.proposals.map((pr) => pr.key));
+    const discarded = SCHEMA.discardClosedBranches(p).filter((d) => proposedKeys.has(d.key));
+    saveState();
+    const discardedTxt = discarded.length ? ` · No incorporados por rama cerrada: ${discarded.map((d) => d.label).join(", ")}` : "";
+    logAudit("Importación desde documento", `${p.id} (${p.fullName})`, `${sample.fileName} · ${applied.length} aceptados, ${rejected} rechazados · ${applied.join("; ")}${discardedTxt}`);
+    di.step = "done";
+    di.appliedCount = applied.length - discarded.length;
+    di.discarded = discarded.map((d) => d.label);
+    toast(`${di.appliedCount} campos incorporados a la ficha de ${p.fullName}.`);
+    render();
+  }
+
   function viewImportar() {
     const r = activeRole();
     const canImport = r.permissions.importFiles;
@@ -1320,15 +1567,22 @@
     return `
       <div class="page-header">
         <div>
-          <h1 class="page-title">Importación estructurada de Excel / CSV</h1>
-          <p class="page-desc">Pensada para arranque limpio en producción. Validación determinística sin IA, barrera obligatoria de 3 identificadores y bandeja de revisión humana.</p>
+          <h1 class="page-title">Importar planillas y documentos</h1>
+          <p class="page-desc">Dos caminos para cargar datos existentes, siempre con revisión humana antes de guardar y sin IA: planillas Excel / CSV o documentos PDF / Word.</p>
         </div>
-        <div class="page-actions">
+        ${ui.importMode === "planilla" ? `<div class="page-actions">
           <button class="btn btn-secondary" type="button" id="btn-dl-template">Descargar plantilla CSV</button>
-        </div>
+        </div>` : ""}
       </div>
 
       ${!canImport ? `<div class="banner banner-info">Tu perfil actual (${esc(r.roleLabel)}) no tiene permisos de importación. Cambiá de rol para probar el flujo.</div>` : ""}
+
+      <div class="system-tabs" role="tablist" aria-label="Modalidad de importación">
+        <button class="sys-tab ${ui.importMode === "planilla" ? "active" : ""}" type="button" role="tab" aria-selected="${ui.importMode === "planilla"}" data-import-mode="planilla">Planilla Excel / CSV</button>
+        <button class="sys-tab ${ui.importMode === "documento" ? "active" : ""}" type="button" role="tab" aria-selected="${ui.importMode === "documento"}" data-import-mode="documento">Documento PDF / Word <span class="badge-confirm">A confirmar</span></button>
+      </div>
+
+      ${ui.importMode === "documento" ? docImportHtml(canImport) : `
 
       <div class="stepper" aria-label="Pasos de importación">
         <div class="step-item ${step === 1 ? "active" : step > 1 ? "done" : ""}"><span class="step-num">1</span>Plantilla y carga de archivo</div>
@@ -1430,6 +1684,7 @@
             </div>
           </div>
         </section>
+      `}
       `}
     `;
   }
@@ -1771,31 +2026,90 @@
 
   // ===================== VIEW 9: ADMIN Y AUDITORÍA =====================
   function viewConfiguracion() {
+    const canAdmin = activeRole().id === "jefatura";
     return `
       <div class="page-header">
         <div>
           <h1 class="page-title">Administración, roles y auditoría</h1>
-          <p class="page-desc">Trazabilidad inmutable de cada acción clínica, matriz RBAC y arquitectura de ambientes sobre VPS (PostgreSQL + Docker).</p>
+          <p class="page-desc">Parámetros de la institución, sectores y camas, catálogos, perfiles de usuario y bitácora de auditoría.</p>
         </div>
       </div>
 
       <div class="grid-equal">
         <section class="panel">
-          <div class="panel-head"><h2 class="panel-title">Ambientes y despliegue en VPS</h2></div>
-          <div class="panel-body">
-            <div class="derived-strip">
-              <div class="derived-item"><span class="derived-label">Producción (prod)</span><span class="derived-val">Arranque limpio · PostgreSQL</span></div>
-              <div class="derived-item"><span class="derived-label">Preproducción (preprod)</span><span class="derived-val">Réplica VPS · Demos</span></div>
-              <div class="derived-item"><span class="derived-label">Pruebas (test / QA)</span><span class="derived-val">Base efímera + CI</span></div>
-              <div class="derived-item"><span class="derived-label">Desarrollo (dev)</span><span class="derived-val">Local Docker + Seeds</span></div>
-              <div class="derived-item"><span class="derived-label">Timeout sesión guardia</span><span class="derived-val">${state.sessionTimeoutMin} min</span></div>
-              <div class="derived-item"><span class="derived-label">Backups VPS</span><span class="derived-val">Diarios cifrados 3-2-1</span></div>
+          <div class="panel-head">
+            <div>
+              <h2 class="panel-title">Datos institucionales</h2>
+              <p class="panel-sub">Aparecen en los PDF y alimentan las calculadoras</p>
             </div>
+          </div>
+          <div class="panel-body">
+            <div class="form-grid">
+              <div class="field field-wide">
+                <label for="inst-name">Nombre de la institución y servicio</label>
+                <input class="input" id="inst-name" data-inst="institutionName" value="${esc(state.institutionName)}" ${canAdmin ? "" : "disabled"} />
+              </div>
+              <div class="field">
+                <label for="inst-timeout">Cierre de sesión por inactividad (min)</label>
+                <input class="input num" id="inst-timeout" type="number" min="5" max="120" data-inst="sessionTimeoutMin" value="${esc(state.sessionTimeoutMin)}" ${canAdmin ? "" : "disabled"} />
+              </div>
+              <div class="field">
+                <label for="inst-eos">Incidencia local de sepsis precoz (/ 1.000 NV) <span class="badge-confirm">A confirmar</span></label>
+                <input class="input num" id="inst-eos" type="number" step="0.1" min="0.1" max="4" data-inst="eosIncidence" value="${esc(state.eosIncidence)}" ${canAdmin ? "" : "disabled"} />
+              </div>
+              <div class="field field-wide">
+                <label>Logo para el membrete de los PDF</label>
+                <div class="logo-slot"><span class="brand-mark" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span><span class="field-hint">En la versión productiva se sube la imagen del hospital.</span></div>
+              </div>
+            </div>
+            ${canAdmin ? "" : `<p class="field-hint" style="margin:12px 0 0">Solo Jefatura puede modificar estos parámetros.</p>`}
           </div>
         </section>
 
         <section class="panel">
-          <div class="panel-head"><h2 class="panel-title">Matriz de perfiles (RBAC)</h2></div>
+          <div class="panel-head">
+            <div>
+              <h2 class="panel-title">Sectores y camas</h2>
+              <p class="panel-sub">Capacidad y ocupación actual de la unidad</p>
+            </div>
+          </div>
+          <div class="panel-body tight">
+            <div class="table-wrap">
+              <table class="clinical-table">
+                <thead><tr><th>Sector</th><th>Camas</th><th>Ocupadas</th><th>Libres</th></tr></thead>
+                <tbody>
+                  ${DATA.SECTORS.map((sec) => {
+                    const occ = state.patients.filter((p) => p.sector === sec.id && (p.status === "hospitalizado" || p.status === "ingreso_incompleto")).length;
+                    return `<tr><td><strong>${esc(sec.name)}</strong></td><td class="num">${sec.capacity}</td><td class="num">${occ}</td><td class="num">${Math.max(0, sec.capacity - occ)}</td></tr>`;
+                  }).join("")}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">Catálogos cerrados</h2>
+            <p class="panel-sub">Listas que se eligen en lugar de escribir texto libre</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="derived-strip">
+            <div class="derived-item"><span class="derived-label">Diagnósticos CIE-10</span><span class="derived-val">${DATA.CIE10_CATALOG.length} en la maqueta</span><span class="field-hint">Producción: catálogo completo de la OPS</span></div>
+            <div class="derived-item"><span class="derived-label">Microorganismos</span><span class="derived-val">${DATA.MICROORGANISMS.length}</span></div>
+            <div class="derived-item"><span class="derived-label">Antibióticos</span><span class="derived-val">${DATA.ANTIBIOTICS.length}</span></div>
+            <div class="derived-item"><span class="derived-label">Modalidades respiratorias</span><span class="derived-val">${DATA.RESP_MODALITIES.length}</span></div>
+            <div class="derived-item"><span class="derived-label">Variables de la ficha</span><span class="derived-val">${Object.keys(SCHEMA.FIELD_BY_KEY).length}</span><span class="field-hint">Ver diccionario en Exportación</span></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="grid-equal">
+        <section class="panel">
+          <div class="panel-head"><div><h2 class="panel-title">Perfiles y permisos</h2><p class="panel-sub">Quién puede cargar, firmar, importar y exportar</p></div></div>
           <div class="panel-body tight">
             <div class="table-wrap">
               <table class="clinical-table">
@@ -2155,6 +2469,19 @@
     // Secciones colapsables de la ficha: se recuerda cuáles cerró el usuario.
     main.querySelectorAll("details.form-section").forEach((d) => {
       d.addEventListener("toggle", () => { ui.collapsedSections[d.dataset.section] = !d.open; });
+    });
+
+    // Parámetros institucionales (Administración)
+    main.querySelectorAll("[data-inst]").forEach((el) => {
+      el.onchange = () => {
+        const key = el.getAttribute("data-inst");
+        const before = state[key];
+        state[key] = el.type === "number" ? (el.value === "" ? "" : Number(el.value)) : el.value.trim();
+        saveState();
+        logAudit("Cambio de parámetro institucional", key, `${before} → ${state[key]}`);
+        toast("Parámetro institucional actualizado.");
+        render();
+      };
     });
 
     // CIE-10 search
@@ -2614,6 +2941,38 @@
   // Global delegated clicks (nav, modals, patient buttons, tabs)
   document.addEventListener("click", (e) => {
     const t = e.target;
+
+    const importMode = t.closest("[data-import-mode]");
+    if (importMode) { ui.importMode = importMode.getAttribute("data-import-mode"); render(); return; }
+
+    const docSample = t.closest("[data-doc-sample]");
+    if (docSample) { startDocImport(docSample.getAttribute("data-doc-sample")); return; }
+
+    const docDecision = t.closest("[data-doc-decision]");
+    if (docDecision && ui.docImport) {
+      const key = docDecision.getAttribute("data-doc-decision");
+      const val = docDecision.getAttribute("data-doc-value");
+      ui.docImport.decisions[key] = ui.docImport.decisions[key] === val ? "pending" : val;
+      ui.docImport.focusKey = key;
+      render();
+      return;
+    }
+
+    const docFocus = t.closest("[data-doc-focus]");
+    if (docFocus && ui.docImport) { ui.docImport.focusKey = docFocus.getAttribute("data-doc-focus"); render(); return; }
+
+    if (t.id === "btn-doc-reset") { ui.docImport = null; render(); return; }
+    if (t.id === "btn-doc-commit" && ui.docImport) { commitDocImport(); return; }
+    if (t.id === "btn-doc-accept-safe" && ui.docImport) {
+      const sample = DOC_SAMPLES.find((d) => d.id === ui.docImport.sampleId);
+      const p = state.patients.find((x) => x.id === sample.targetId);
+      for (const pr of sample.proposals) {
+        const cur = SCHEMA.readField(p, SCHEMA.FIELD_BY_KEY[pr.key]);
+        if (cur === "" && !ui.docImport.decisions[pr.key]) ui.docImport.decisions[pr.key] = "accepted";
+      }
+      render();
+      return;
+    }
 
     const navBtn = t.closest("[data-nav]");
     if (navBtn) {

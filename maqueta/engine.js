@@ -842,7 +842,8 @@
       return null;
     }
     const hivAny = tally((p) => cranialUsOutcome(p, /HIV/i));
-    const hivSevere = tally((p) => cranialUsOutcome(p, /III|IV/i));
+    // Ojo: /III|IV/ coincidiría con la «IV» de «HIV»; se busca el grado explícito.
+    const hivSevere = tally((p) => cranialUsOutcome(p, /grado\s*(III|IV)\b/i));
     // NEC: solo una respuesta explícita es dato; vacío es deuda de registro.
     const nec = tally((p) => (p.hosp.nec === "Sí" ? true : p.hosp.nec === "No" ? false : null));
     const dap = tally((p) => {
