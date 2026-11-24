@@ -6,7 +6,8 @@
 
   let state = loadState();
   let ui = {
-    route: "inicio", // inicio | pacientes | ingreso | hosp | epicrisis | importar | estadisticas | exportacion | configuracion
+    route: "unidad", // unidad | ingreso | hosp | epicrisis | importar | estadisticas | exportacion | configuracion
+    unitSearch: "",
     selectedPatientId: state.patients[0]?.id || null,
     hospTab: "respiratorio",
     patientFilters: { text: "", status: "all", sector: "all", gaGroup: "all" },
@@ -154,7 +155,7 @@
 
   function navigate(route, patientId) {
     if (patientId) ui.selectedPatientId = patientId;
-    ui.route = route;
+    ui.route = route === "inicio" || route === "pacientes" ? "unidad" : route;
     closeDrawer();
     render();
     document.getElementById("main").focus({ preventScroll: true });
@@ -186,42 +187,27 @@
 
   function renderNav() {
     const activeCount = state.patients.filter((p) => p.status === "hospitalizado" || p.status === "ingreso_incompleto").length;
-    const incompCount = state.patients.filter((p) => p.status === "ingreso_incompleto").length;
     const pendingImport = ui.activeBatch ? ui.activeBatch.rows.filter((r) => r.decision === "pending").length : 0;
-
-    const groups = [
-      {
-        label: "Clínica",
-        items: [
-          { id: "inicio", label: "Inicio y censo", icon: "home", count: activeCount },
-          { id: "pacientes", label: "Pacientes", icon: "users", count: state.patients.length },
-          { id: "ingreso", label: "Ficha de ingreso", icon: "clipboard", count: incompCount || null },
-          { id: "hosp", label: "Hospitalización", icon: "activity", count: null },
-          { id: "epicrisis", label: "Egreso y epicrisis", icon: "file", count: null }
-        ]
-      },
-      {
-        label: "Gestión y datos",
-        items: [
-          { id: "importar", label: "Importar datos", icon: "upload", count: pendingImport || null },
-          { id: "estadisticas", label: "Estadísticas", icon: "chart", count: null },
-          { id: "exportacion", label: "Exportación", icon: "download", count: null },
-          { id: "configuracion", label: "Admin y auditoría", icon: "settings", count: null }
-        ]
-      }
+    // Cinco destinos. La historia de cada bebé se abre desde Unidad (no hay ítems de paciente sueltos).
+    const items = [
+      { id: "unidad", label: "Unidad", icon: "home", count: activeCount, hint: "cunas ocupadas" },
+      { id: "estadisticas", label: "Estadísticas", icon: "chart", count: null },
+      { id: "importar", label: "Importar datos", icon: "upload", count: pendingImport || null, hint: "filas por revisar" },
+      { id: "exportacion", label: "Exportar", icon: "download", count: null },
+      { id: "configuracion", label: "Administración", icon: "settings", count: null }
     ];
-
-    document.getElementById("rail-nav").innerHTML = groups.map((g) => `
-      <div class="nav-group">
-        <div class="nav-group-label">${esc(g.label)}</div>
-        ${g.items.map((it) => `
-          <button class="nav-item ${ui.route === it.id ? "active" : ""}" type="button" data-nav="${it.id}" ${ui.route === it.id ? 'aria-current="page"' : ""}>
-            <span class="nav-item-main">${iconSvg(it.icon)}<span>${esc(it.label)}</span></span>
-            ${it.count !== null ? `<span class="nav-count">${it.count}</span>` : ""}
-          </button>
-        `).join("")}
-      </div>
+    const current = navSection(ui.route);
+    document.getElementById("rail-nav").innerHTML = items.map((it) => `
+      <button class="nav-item ${current === it.id ? "active" : ""}" type="button" data-nav="${it.id}" ${current === it.id ? 'aria-current="page"' : ""}>
+        <span class="nav-item-main">${iconSvg(it.icon)}<span>${esc(it.label)}</span></span>
+        ${it.count !== null ? `<span class="nav-count" title="${it.count} ${esc(it.hint || "")}">${it.count}</span>` : ""}
+      </button>
     `).join("");
+  }
+
+  // La historia de un paciente pertenece a la sección Unidad.
+  function navSection(route) {
+    return isPatientRoute(route) || route === "inicio" || route === "pacientes" ? "unidad" : route;
   }
 
   function renderTopbar() {
@@ -231,390 +217,219 @@
     document.getElementById("role-label").textContent = r.roleLabel;
 
     const titles = {
-      inicio: "Inicio y censo de unidad",
-      pacientes: "Padrón de pacientes",
-      ingreso: "Ficha de ingreso",
-      hosp: "Hospitalización y líneas de tiempo",
-      epicrisis: "Egreso y epicrisis",
-      importar: "Importar planillas y documentos",
-      estadisticas: "Estadísticas e indicadores",
-      exportacion: "Exportación y diccionario",
-      configuracion: "Administración y auditoría"
+      unidad: "Unidad",
+      importar: "Importar datos",
+      estadisticas: "Estadísticas",
+      exportacion: "Exportar",
+      configuracion: "Administración"
     };
-
     const p = activePatient();
     const crumb = isPatientRoute(ui.route) && p
-      ? `<span>Pacientes</span> / <span>${esc(p.fullName)}</span> / <strong>${esc(titles[ui.route])}</strong>`
-      : `<strong>${esc(titles[ui.route] || "NeoSalud")}</strong>`;
+      ? `<button class="crumb-link" type="button" data-nav="unidad">Unidad</button><span aria-hidden="true">/</span><strong>${esc(p.fullName)}</strong>`
+      : `<strong>${esc(titles[navSection(ui.route)] || "NeoSalud")}</strong>`;
     document.getElementById("breadcrumb").innerHTML = crumb;
   }
 
+  // Cabecera de la historia: quién es el bebé y en qué paso de la internación estás.
   function renderPatientStrip() {
     const el = document.getElementById("patient-strip");
-    if (!isPatientRoute(ui.route)) {
+    const p = isPatientRoute(ui.route) ? activePatient() : null;
+    if (!p) {
       el.hidden = true;
       el.innerHTML = "";
       return;
     }
-    const p = activePatient();
-    if (!p) {
-      el.hidden = true;
-      return;
-    }
-    const stay = ENG.getPatientStayDays(p);
+    const canEdit = activeRole().permissions.editClinical;
+    const steps = historySteps(p);
+    const facts = [
+      ENG.num(p.gaWeeks) === null ? "EG sin responder" : `${ENG.fmtGa(p.gaWeeks, p.gaDays)} semanas`,
+      ENG.fmtWeight(p.birthWeight, "peso sin responder"),
+      dayOfLife(p) === null ? null : `día ${dayOfLife(p)} de vida`,
+      isActive(p) ? (p.sector ? sectorName(p.sector) : "sin sector") : null
+    ].filter(Boolean);
     el.hidden = false;
     el.innerHTML = `
-      <div class="patient-strip-inner">
-        <div class="patient-id-block">
-          <select class="select" style="width:auto;min-width:210px;font-weight:600" id="patient-switcher" aria-label="Cambiar paciente activo">
-            ${state.patients.map((pt) => `<option value="${esc(pt.id)}" ${pt.id === p.id ? "selected" : ""}>${esc(pt.fullName)} (${esc(pt.id)} · ${esc(ENG.fmtGa(pt.gaWeeks, pt.gaDays, "EG s/d"))})</option>`).join("")}
-          </select>
+      <div class="history-head">
+        <button class="back-link" type="button" data-nav="unidad">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+          Volver a la unidad
+        </button>
+        <div class="history-id">
+          <h1 class="history-name">${esc(p.fullName)}</h1>
           ${statusBadge(p.status)}
-          <div class="patient-telemetry">
-            <span class="telemetry-item"><span>HC</span><strong class="mono">${esc(p.hc)}</strong></span>
-            <span class="telemetry-item"><span>EG</span><strong class="num">${ENG.num(p.gaWeeks) === null ? "Sin responder" : esc(ENG.fmtGa(p.gaWeeks, p.gaDays)) + " sem"}</strong></span>
-            <span class="telemetry-item"><span>Peso nac.</span><strong class="num">${esc(ENG.fmtWeight(p.birthWeight))}</strong></span>
-            <span class="telemetry-item"><span>Estadía</span><strong class="num">${stay} d</strong></span>
-            <span class="telemetry-item"><span>Sector</span><strong>${esc(p.sector)}</strong></span>
-          </div>
+          ${canEdit && isActive(p) ? `<button class="btn btn-ghost btn-sm" type="button" data-transfer-patient="${esc(p.id)}">Cambiar de sector</button>` : ""}
         </div>
-        <div class="patient-subnav" role="tablist" aria-label="Secciones de la historia clínica">
-          <button class="subnav-btn ${ui.route === "ingreso" ? "active" : ""}" type="button" data-nav="ingreso">Ingreso</button>
-          <button class="subnav-btn ${ui.route === "hosp" ? "active" : ""}" type="button" data-nav="hosp">Hospitalización</button>
-          <button class="subnav-btn ${ui.route === "epicrisis" ? "active" : ""}" type="button" data-nav="epicrisis">Egreso y epicrisis</button>
-        </div>
+        <p class="history-facts">${facts.map(esc).join(", ")} <span class="mono history-ids">${esc(p.id)}${p.hc ? `, ${esc(p.hc)}` : ""}</span></p>
+        <nav class="hsteps" aria-label="Pasos de la internación">
+          ${steps.map((s, i) => `
+            <button class="hstep ${ui.route === s.route ? "is-current" : ""} hstep-${s.tone}" type="button" data-nav="${s.route}" ${ui.route === s.route ? 'aria-current="step"' : ""}>
+              <span class="hstep-num" aria-hidden="true">${i + 1}</span>
+              <span class="hstep-text"><span class="hstep-title">${esc(s.title)}</span><span class="hstep-state">${esc(s.state)}</span></span>
+            </button>`).join("")}
+        </nav>
       </div>
     `;
   }
 
-  // ===================== VIEW 1: INICIO =====================
-  function viewInicio() {
-    const r = activeRole();
-    const active = state.patients.filter((p) => p.status === "hospitalizado" || p.status === "ingreso_incompleto");
-    const incomp = state.patients.filter((p) => p.status === "ingreso_incompleto");
-    const discharged = state.patients.filter((p) => p.status === "egresado");
-    const avgStay = discharged.length
-      ? (discharged.reduce((a, p) => a + ENG.getPatientStayDays(p), 0) / discharged.length).toFixed(1)
-      : "—";
+  function isActive(p) {
+    return p.status === "hospitalizado" || p.status === "ingreso_incompleto";
+  }
 
-    const alerts = [];
-    for (const p of state.patients) {
-      if (p.status === "ingreso_incompleto") {
-        alerts.push({
-          severity: "warn",
-          title: `${p.fullName} (${p.id}) · Ingreso sin validar`,
-          detail: `Sector ${p.sector || "sin asignar"} · EG ${ENG.fmtGa(p.gaWeeks, p.gaDays)} · Peso ${ENG.fmtWeight(p.birthWeight)}. Falta generar y firmar borrador de ingreso.`,
-          actionLabel: "Completar ingreso",
-          route: "ingreso",
-          patientId: p.id
-        });
-      }
-      const admDiff = ENG.computeDraftDiff(p, "admission");
-      if (admDiff.length) {
-        alerts.push({
-          severity: "danger",
-          title: `${p.fullName} · Borrador de ingreso desfasado`,
-          detail: `Cambió: ${admDiff.map((d) => `${d.label} (${d.prev} → ${d.curr})`).join(", ")}.`,
-          actionLabel: "Revisar borrador",
-          route: "ingreso",
-          patientId: p.id
-        });
-      }
-      if (p.status === "hospitalizado" && ENG.num(p.gaWeeks) !== null && ENG.num(p.gaWeeks) < 32 && p.hosp.respCoverage !== "completa") {
-        alerts.push({
-          severity: "warn",
-          title: `${p.fullName} · Cronología respiratoria abierta`,
-          detail: `Prematuro ${p.gaWeeks}+${p.gaDays} sem en ${p.sector}. Figura como deuda de registro hasta confirmar corte clínico.`,
-          actionLabel: "Abrir línea de tiempo",
-          route: "hosp",
-          patientId: p.id
-        });
+  function sectorName(id) {
+    const s = DATA.SECTORS.find((x) => x.id === id);
+    return s ? s.name : id;
+  }
+
+  function dayOfLife(p) {
+    if (!p.birthDate) return null;
+    const end = isActive(p) ? ENG.REF_DATE : (p.dischargeDate || ENG.REF_DATE);
+    return Math.max(0, Math.round((Date.parse(end) - Date.parse(p.birthDate)) / 86400000));
+  }
+
+  // Estado de cada paso, en palabras: lo que conviene mirar primero.
+  function historySteps(p) {
+    const adm = p.admissionDraft;
+    const epi = p.epicrisisDraft;
+    const admState = adm.validated
+      ? (ENG.computeDraftDiff(p, "admission").length ? ["Firmado, con cambios posteriores", "action"] : ["Firmado", "ok"])
+      : adm.text ? ["Borrador sin firmar", "action"] : ["Sin completar", "action"];
+    const stay = ENG.getPatientStayDays(p);
+    const hospState = [`${stay} ${stay === 1 ? "día" : "días"}${p.hosp.respCoverage === "completa" ? "" : ", cronología abierta"}`, "neutral"];
+    const epiState = epi.validated ? ["Epicrisis firmada", "ok"] : isActive(p) ? ["Al dar el alta", "neutral"] : ["Epicrisis sin firmar", "action"];
+    return [
+      { route: "ingreso", title: "Ingreso", state: admState[0], tone: admState[1] },
+      { route: "hosp", title: "Internación", state: hospState[0], tone: hospState[1] },
+      { route: "epicrisis", title: "Egreso", state: epiState[0], tone: epiState[1] }
+    ];
+  }
+
+  // Paso que se abre al tocar una cuna: el que necesita atención.
+  function defaultStepFor(p) {
+    if (p.status === "ingreso_incompleto" || !p.admissionDraft.validated) return "ingreso";
+    if (isActive(p)) return "hosp";
+    return "epicrisis";
+  }
+
+  // ===================== UNIDAD (cunas por sector) =====================
+  // Lo que hay que resolver por paciente, de más a menos urgente.
+  function patientIssues(p) {
+    const issues = [];
+    if (p.status === "ingreso_incompleto") issues.push({ tone: "action", text: "Ingreso sin firmar", route: "ingreso" });
+    else if (p.admissionDraft.validated && ENG.computeDraftDiff(p, "admission").length) issues.push({ tone: "action", text: "Ingreso firmado con cambios posteriores", route: "ingreso" });
+    if (isActive(p)) {
+      const missing = coreMissingFields(p).length;
+      if (missing) issues.push({ tone: "missing", text: missing === 1 ? "Falta 1 dato del ingreso" : `Faltan ${missing} datos del ingreso`, route: "ingreso" });
+      if (ENG.num(p.gaWeeks) !== null && ENG.num(p.gaWeeks) < 32 && p.hosp.respCoverage !== "completa") {
+        issues.push({ tone: "missing", text: "Cronología respiratoria abierta", route: "hosp" });
       }
     }
+    return issues;
+  }
 
+  function viewUnidad() {
+    const r = activeRole();
+    const q = fold(ui.unitSearch || "");
+    const matches = (p) => !q || fold(`${p.fullName} ${p.id} ${p.hc} ${p.motherName} ${p.motherDni}`).includes(q);
+    const active = state.patients.filter(isActive);
     const totalBeds = DATA.SECTORS.reduce((a, s) => a + s.capacity, 0);
-    const occPct = Math.round((active.length / totalBeds) * 100);
+    // En el panel solo va lo que requiere una firma; lo incompleto se resume en una línea que resalta las cunas.
+    const todo = active.flatMap((p) => patientIssues(p).filter((i) => i.tone === "action").map((i) => ({ p, ...i })));
+    const withMissing = active.filter((p) => patientIssues(p).some((i) => i.tone === "missing"));
+    const onlyMissing = ui.unitFilter === "missing";
+    const closed = state.patients.filter((p) => !isActive(p) && matches(p))
+      .sort((a, b) => String(b.dischargeDate || "").localeCompare(String(a.dischargeDate || "")));
+
+    const cunaHtml = (p) => {
+      const issue = patientIssues(p)[0];
+      const dol = dayOfLife(p);
+      return `
+        <button class="cuna ${issue ? `has-${issue.tone}` : ""} ${matches(p) && (!onlyMissing || withMissing.includes(p)) ? "" : "is-dimmed"}" type="button" data-open-patient="${esc(p.id)}" data-target-route="${defaultStepFor(p)}">
+          <span class="cuna-name">${esc(p.fullName)}</span>
+          <span class="cuna-facts">${esc(ENG.fmtGa(p.gaWeeks, p.gaDays, "EG s/d"))}${ENG.num(p.gaWeeks) === null ? "" : " sem"}${dol === null ? "" : `, día ${dol}`}</span>
+          <span class="cuna-facts">${esc(ENG.fmtWeight(p.birthWeight, "peso s/d"))}</span>
+          ${issue ? `<span class="cuna-issue tone-${issue.tone}">${esc(issue.text)}</span>` : `<span class="cuna-issue tone-ok">Al día</span>`}
+        </button>`;
+    };
 
     return `
-      <div class="page-header">
+      <div class="page-header unit-header">
         <div>
-          <h1 class="page-title">Censo de la Unidad de Neonatología</h1>
-          <p class="page-desc">${esc(state.institutionName)} — Corte clínico al ${ENG.fmtDate(ENG.REF_DATE)}. Cada dato registrado deriva borradores, líneas de tiempo y tasas sin doble carga.</p>
+          <h1 class="page-title">${active.length} de ${totalBeds} cunas ocupadas</h1>
+          <p class="page-desc">Tocá una cuna para abrir la historia del bebé, o una cuna libre para ingresar a uno nuevo.</p>
         </div>
         <div class="page-actions">
-          ${r.permissions.createPatient ? `<button class="btn btn-primary" type="button" id="btn-new-patient">Crear paciente</button>` : ""}
-          ${r.permissions.importFiles ? `<button class="btn btn-secondary" type="button" data-nav="importar">Importar datos</button>` : ""}
+          <input class="input unit-search" id="unit-search" type="search" placeholder="Buscar por nombre, HC o DNI de la madre" value="${esc(ui.unitSearch || "")}" aria-label="Buscar paciente" />
+          ${r.permissions.createPatient ? `<button class="btn btn-primary" type="button" id="btn-new-patient">Ingresar recién nacido</button>` : ""}
         </div>
       </div>
 
-      <section class="ledger-bar" aria-label="Resumen operativo del servicio">
-        <div class="ledger-cell">
-          <div class="ledger-label">En la unidad hoy</div>
-          <div class="ledger-value is-teal">${active.length}</div>
-          <div class="ledger-sub">${occPct}% ocupación sobre ${totalBeds} plazas</div>
+      <div class="unit-layout">
+        <div class="unit-map">
+          ${DATA.SECTORS.map((sec) => {
+            const here = active.filter((p) => p.sector === sec.id);
+            const free = Math.max(0, sec.capacity - here.length);
+            return `
+              <section class="sector" aria-labelledby="sec-${esc(sec.id)}">
+                <h2 class="sector-title" id="sec-${esc(sec.id)}">${esc(sec.name)} <span class="sector-count">${here.length} de ${sec.capacity}</span></h2>
+                <div class="cuna-grid">
+                  ${here.map(cunaHtml).join("")}
+                  ${Array.from({ length: free }, () => r.permissions.createPatient
+                    ? `<button class="cuna cuna-free" type="button" data-new-patient-sector="${esc(sec.id)}">Cuna libre<span>Ingresar aquí</span></button>`
+                    : `<div class="cuna cuna-free" aria-label="Cuna libre">Cuna libre</div>`).join("")}
+                </div>
+              </section>`;
+          }).join("")}
+          ${active.some((p) => !p.sector) ? `
+            <section class="sector">
+              <h2 class="sector-title">Sin sector asignado</h2>
+              <div class="cuna-grid">${active.filter((p) => !p.sector).map(cunaHtml).join("")}</div>
+            </section>` : ""}
         </div>
-        <div class="ledger-cell">
-          <div class="ledger-label">Ingresos incompletos</div>
-          <div class="ledger-value ${incomp.length ? "is-warn" : ""}">${incomp.length}</div>
-          <div class="ledger-sub">${incomp.length ? "Requieren validación médica" : "Sin pendientes de ingreso"}</div>
-        </div>
-        <div class="ledger-cell">
-          <div class="ledger-label">Alertas de registro</div>
-          <div class="ledger-value ${alerts.length ? "is-warn" : ""}">${alerts.length}</div>
-          <div class="ledger-sub">Desfasajes o cronologías abiertas</div>
-        </div>
-        <div class="ledger-cell">
-          <div class="ledger-label">Estadía media al alta</div>
-          <div class="ledger-value">${avgStay}${avgStay !== "—" ? " d" : ""}</div>
-          <div class="ledger-sub">Sobre ${discharged.length} egresos vivos</div>
-        </div>
+
+        <aside class="unit-todo" aria-labelledby="todo-title">
+          <h2 class="aside-title" id="todo-title">Para firmar</h2>
+          ${todo.length ? `
+            <ul class="todo-list">
+              ${todo.map((t) => `
+                <li>
+                  <button class="todo-item" type="button" data-open-patient="${esc(t.p.id)}" data-target-route="${t.route}">
+                    <span class="todo-mark tone-${t.tone}" aria-hidden="true"></span>
+                    <span><strong>${esc(t.p.fullName)}</strong><span class="todo-text">${esc(t.text)}</span></span>
+                  </button>
+                </li>`).join("")}
+            </ul>` : `<p class="field-hint">No hay documentos esperando firma.</p>`}
+          ${withMissing.length ? `
+            <button class="missing-toggle ${onlyMissing ? "is-on" : ""}" type="button" id="btn-unit-missing" aria-pressed="${onlyMissing}">
+              <span class="todo-mark tone-missing" aria-hidden="true"></span>
+              <span>${withMissing.length} ${withMissing.length === 1 ? "bebé tiene" : "bebés tienen"} datos por completar<span class="todo-text">${onlyMissing ? "Mostrar todas las cunas" : "Resaltarlos en el mapa"}</span></span>
+            </button>` : ""}
+        </aside>
+      </div>
+
+      <section class="closed-list" aria-labelledby="closed-title">
+        <h2 class="aside-title" id="closed-title">Egresos y fallecidos (${closed.length})</h2>
+        ${closed.length ? `
+          <div class="table-wrap">
+            <table class="clinical-table rows-clickable">
+              <thead><tr><th>Paciente</th><th>EG</th><th>Peso al nacer</th><th>Egreso</th><th>Condición</th></tr></thead>
+              <tbody>
+                ${closed.map((p) => `
+                  <tr data-open-patient="${esc(p.id)}" data-target-route="epicrisis" tabindex="0">
+                    <td><strong>${esc(p.fullName)}</strong></td>
+                    <td class="num">${esc(ENG.fmtGa(p.gaWeeks, p.gaDays, "—"))}</td>
+                    <td class="num">${esc(ENG.fmtWeight(p.birthWeight, "—"))}</td>
+                    <td class="num">${esc(ENG.fmtDate(p.dischargeDate) || "—")}</td>
+                    <td>${p.status === "fallecido" ? "Fallecido" : esc(ENG.fieldText(p, "condition", "Egresado"))}</td>
+                  </tr>`).join("")}
+              </tbody>
+            </table>
+          </div>` : `<p class="field-hint">Ningún egreso coincide con la búsqueda.</p>`}
       </section>
-
-      <div class="grid-2">
-        <div>
-          <section class="panel">
-            <div class="panel-head">
-              <div>
-                <h2 class="panel-title">Ocupación por sector</h2>
-                <p class="panel-sub">Pacientes internados y en proceso de ingreso distribuidos por área</p>
-              </div>
-              <button class="btn btn-ghost btn-sm" type="button" data-nav="pacientes">Ver padrón completo</button>
-            </div>
-            <div class="panel-body">
-              <div class="sector-list">
-                ${DATA.SECTORS.map((sec) => {
-                  const count = active.filter((p) => p.sector === sec.id).length;
-                  const pct = Math.min(100, Math.round((count / sec.capacity) * 100));
-                  return `
-                    <div>
-                      <div class="sector-row-top">
-                        <strong>${esc(sec.name)}</strong>
-                        <span class="num">${count} / ${sec.capacity} plazas (${pct}%)</span>
-                      </div>
-                      <div class="sector-track"><div class="sector-fill ${pct >= 80 ? "high" : ""}" style="width:${pct}%"></div></div>
-                    </div>
-                  `;
-                }).join("")}
-              </div>
-            </div>
-          </section>
-
-          <section class="panel">
-            <div class="panel-head">
-              <div>
-                <h2 class="panel-title">Pacientes activos y casos de referencia</h2>
-                <p class="panel-sub">Acceso directo a historia clínica, líneas de tiempo o epicrisis</p>
-              </div>
-            </div>
-            <div class="panel-body tight">
-              <div class="table-wrap">
-                <table class="clinical-table">
-                  <thead>
-                    <tr>
-                      <th>Paciente</th>
-                      <th>EG</th>
-                      <th>Peso nac.</th>
-                      <th>Sector</th>
-                      <th>Estado</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${state.patients.slice(0, 6).map((p) => `
-                      <tr>
-                        <td>
-                          <button class="row-link" type="button" data-open-patient="${esc(p.id)}" data-target-route="${p.status === "ingreso_incompleto" ? "ingreso" : "hosp"}">${esc(p.fullName)}</button>
-                          <div class="field-hint mono">${esc(p.id)} · ${esc(p.hc)}</div>
-                        </td>
-                        <td class="num">${esc(ENG.fmtGa(p.gaWeeks, p.gaDays, "—"))}</td>
-                        <td class="num">${esc(ENG.fmtWeight(p.birthWeight, "—"))}</td>
-                        <td>${esc(p.sector)}</td>
-                        <td>${statusBadge(p.status)}</td>
-                        <td>
-                          <button class="btn btn-secondary btn-sm" type="button" data-open-patient="${esc(p.id)}" data-target-route="${p.status === "ingreso_incompleto" ? "ingreso" : "hosp"}">Abrir</button>
-                        </td>
-                      </tr>
-                    `).join("")}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-        </div>
-
-        <div>
-          <section class="panel">
-            <div class="panel-head">
-              <div>
-                <h2 class="panel-title">Deuda clínica y validaciones pendientes</h2>
-                <p class="panel-sub">Elementos que requieren revisión médica antes del cierre</p>
-              </div>
-            </div>
-            <div class="panel-body tight">
-              ${alerts.length ? `
-                <ul class="queue-list">
-                  ${alerts.map((al) => `
-                    <li class="queue-item">
-                      <div>
-                        <div class="queue-title">${esc(al.title)}</div>
-                        <div class="queue-detail">${esc(al.detail)}</div>
-                      </div>
-                      <button class="btn btn-secondary btn-sm" type="button" data-open-patient="${esc(al.patientId)}" data-target-route="${al.route}">${esc(al.actionLabel)}</button>
-                    </li>
-                  `).join("")}
-                </ul>
-              ` : `<div class="empty-state"><strong>Sin alertas pendientes</strong>Todos los ingresos y cronologías están al día.</div>`}
-            </div>
-          </section>
-
-          <section class="panel">
-            <div class="panel-head">
-              <div>
-                <h2 class="panel-title">Última actividad auditada</h2>
-                <p class="panel-sub">Trazabilidad reciente del servicio</p>
-              </div>
-              <button class="btn btn-ghost btn-sm" type="button" data-nav="configuracion">Ver bitácora</button>
-            </div>
-            <div class="panel-body tight">
-              <ul class="queue-list">
-                ${state.auditLog.slice(0, 4).map((a) => `
-                  <li class="queue-item">
-                    <div>
-                      <div class="queue-title">${esc(a.action)} — ${esc(a.target)}</div>
-                      <div class="queue-detail">${esc(a.user)} (${esc(a.role)}) · <span class="mono">${esc(ENG.fmtDate(a.ts))}</span></div>
-                    </div>
-                  </li>
-                `).join("")}
-              </ul>
-            </div>
-          </section>
-        </div>
-      </div>
     `;
   }
 
-  // ===================== VIEW 2: PACIENTES =====================
-  function viewPacientes() {
-    const r = activeRole();
-    const f = ui.patientFilters;
-    const rows = state.patients.filter((p) => {
-      if (f.text) {
-        const q = f.text.toLowerCase();
-        const hay = `${p.fullName} ${p.id} ${p.hc} ${p.motherName} ${p.motherDni}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      if (f.status !== "all" && p.status !== f.status) return false;
-      if (f.sector !== "all" && p.sector !== f.sector) return false;
-      if (f.gaGroup !== "all") {
-        if (f.gaGroup === "<28" && !(p.gaWeeks < 28)) return false;
-        if (f.gaGroup === "28-31" && !(p.gaWeeks >= 28 && p.gaWeeks <= 31)) return false;
-        if (f.gaGroup === "32-36" && !(p.gaWeeks >= 32 && p.gaWeeks <= 36)) return false;
-        if (f.gaGroup === ">=37" && !(p.gaWeeks >= 37)) return false;
-      }
-      return true;
-    });
-
-    return `
-      <div class="page-header">
-        <div>
-          <h1 class="page-title">Padrón de pacientes</h1>
-          <p class="page-desc">Búsqueda combinada por identificación, estado, sector y edad gestacional. Alta rápida con correlativo automático.</p>
-        </div>
-        <div class="page-actions">
-          ${r.permissions.createPatient ? `<button class="btn btn-primary" type="button" id="btn-new-patient">Crear paciente</button>` : `<span class="status-pill status-na">Solo lectura</span>`}
-        </div>
-      </div>
-
-      <section class="panel">
-        <div class="filter-bar">
-          <div class="field" style="flex:1;min-width:220px">
-            <label for="pf-text">Buscar paciente</label>
-            <input class="input" id="pf-text" type="search" placeholder="Nombre, ID NEO, HC o DNI materno" value="${esc(f.text)}" />
-          </div>
-          <div class="field" style="min-width:170px">
-            <label for="pf-status">Estado</label>
-            <select class="select" id="pf-status">
-              <option value="all" ${f.status === "all" ? "selected" : ""}>Todos los estados</option>
-              <option value="ingreso_incompleto" ${f.status === "ingreso_incompleto" ? "selected" : ""}>Ingreso incompleto</option>
-              <option value="hospitalizado" ${f.status === "hospitalizado" ? "selected" : ""}>Hospitalizado</option>
-              <option value="egresado" ${f.status === "egresado" ? "selected" : ""}>Egresado</option>
-              <option value="fallecido" ${f.status === "fallecido" ? "selected" : ""}>Fallecido</option>
-            </select>
-          </div>
-          <div class="field" style="min-width:165px">
-            <label for="pf-sector">Sector</label>
-            <select class="select" id="pf-sector">
-              <option value="all" ${f.sector === "all" ? "selected" : ""}>Todos los sectores</option>
-              ${DATA.SECTORS.map((s) => `<option value="${esc(s.id)}" ${f.sector === s.id ? "selected" : ""}>${esc(s.id)}</option>`).join("")}
-            </select>
-          </div>
-          <div class="field" style="min-width:155px">
-            <label for="pf-ga">Edad gestacional</label>
-            <select class="select" id="pf-ga">
-              <option value="all" ${f.gaGroup === "all" ? "selected" : ""}>Todas las EG</option>
-              <option value="<28" ${f.gaGroup === "<28" ? "selected" : ""}>&lt; 28 sem</option>
-              <option value="28-31" ${f.gaGroup === "28-31" ? "selected" : ""}>28–31+6 sem</option>
-              <option value="32-36" ${f.gaGroup === "32-36" ? "selected" : ""}>32–36+6 sem</option>
-              <option value=">=37" ${f.gaGroup === ">=37" ? "selected" : ""}>≥ 37 sem</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="panel-body tight">
-          ${rows.length ? `
-            <div class="table-wrap">
-              <table class="clinical-table">
-                <thead>
-                  <tr>
-                    <th>ID / HC</th>
-                    <th>Recién nacido</th>
-                    <th>Nacimiento</th>
-                    <th>EG</th>
-                    <th>Peso nac.</th>
-                    <th>Fenton 2025</th>
-                    <th>Sector</th>
-                    <th>Estado</th>
-                    <th>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${rows.map((p) => {
-                    const fen = ENG.calcFenton2025(p.gaWeeks, p.gaDays, p.sex, p.birthWeight);
-                    return `
-                      <tr>
-                        <td class="mono">${esc(p.id)}<div class="field-hint">${esc(p.hc)}</div></td>
-                        <td>
-                          <button class="row-link" type="button" data-open-patient="${esc(p.id)}" data-target-route="ingreso">${esc(p.fullName)}</button>
-                          <div class="field-hint">Madre: ${esc(p.motherName || "Sin consignar")}</div>
-                        </td>
-                        <td class="num">${esc(ENG.fmtDate(p.birthDate) || "—")}</td>
-                        <td class="num">${esc(ENG.fmtGa(p.gaWeeks, p.gaDays, "—"))}</td>
-                        <td class="num">${esc(ENG.fmtWeight(p.birthWeight, "—"))}</td>
-                        <td class="num">${fen.ready ? `${esc(fen.classification.split(" ")[0])} (P${fen.percentile})` : "—"}</td>
-                        <td>${esc(p.sector)}</td>
-                        <td>${statusBadge(p.status)}</td>
-                        <td>
-                          <div style="display:flex;gap:6px;flex-wrap:wrap">
-                            <button class="btn btn-secondary btn-sm" type="button" data-open-patient="${esc(p.id)}" data-target-route="ingreso">Ingreso</button>
-                            <button class="btn btn-secondary btn-sm" type="button" data-open-patient="${esc(p.id)}" data-target-route="hosp">Timelines</button>
-                            ${r.permissions.editClinical ? `<button class="btn btn-ghost btn-sm" type="button" data-transfer-patient="${esc(p.id)}">Pase</button>` : ""}
-                          </div>
-                        </td>
-                      </tr>
-                    `;
-                  }).join("")}
-                </tbody>
-              </table>
-            </div>
-          ` : `
-            <div class="empty-state">
-              <strong>No hay pacientes que coincidan con el filtro</strong>
-              Ajustá los criterios de búsqueda o limpiá los filtros activos.
-            </div>
-          `}
-        </div>
-      </section>
-    `;
+  function fold(t) {
+    return String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   }
 
   // ===================== FICHA DE INGRESO DECLARATIVA (schema.js) =====================
@@ -668,7 +483,8 @@
   function schemaSectionHtml(sec, p, canEdit, ctx) {
     const visible = sec.fields.filter((f) => SCHEMA.conditionMet(p, f) && (f.onlyWhen !== "kaiser" || ctx.kaiserApplicable));
     const inSection = new Set(sec.fields.map((f) => f.key));
-    const childrenOf = (key) => visible.filter((f) => f.showIf && f.showIf.key === key);
+    const opensBranch = (f) => f.showIf && f.showIf.notEq === undefined;
+    const childrenOf = (key) => visible.filter((f) => opensBranch(f) && f.showIf.key === key);
     // Los subcampos de una rama se dibujan inmediatamente después de su campo padre,
     // marcados como rama, para que la grilla no deje filas vacías.
     const renderGroup = (list, parent) => list.map((f) => {
@@ -676,7 +492,7 @@
       return fieldControlHtml(f, p, canEdit, parent) + (kids.length ? renderGroup(kids, f) : "");
     }).join("");
     if (!visible.length) return "";
-    const roots = visible.filter((f) => !f.showIf || !inSection.has(f.showIf.key));
+    const roots = visible.filter((f) => !opensBranch(f) || !inSection.has(f.showIf.key));
     const filled = visible.filter((f) => SCHEMA.readField(p, f) !== "").length;
     const toConfirm = visible.filter((f) => !f.core).length;
     const open = ctx.forceOpen || !ui.collapsedSections[sec.id];
@@ -748,8 +564,7 @@
     return `
       <div class="page-header">
         <div>
-          <h1 class="page-title">Ficha de ingreso condicional</h1>
-          <p class="page-desc">Las subramas se muestran solo según la respuesta clínica. Si cerrás una rama, los subcampos ocultos se descartan sin dejar datos huérfanos.</p>
+          <p class="step-lead">Completá lo que sepas. Lo que quede vacío figura como «Sin responder» en el borrador; algunas preguntas aparecen solas según la respuesta anterior.</p>
         </div>
         <div class="page-actions">
           <input class="input" id="ingreso-var-filter" style="width:270px;max-width:100%" type="search" placeholder="Buscar variable (ej. Chagas, reanimación, DNI)" value="${esc(ui.ingresoVarFilter)}" />
@@ -793,7 +608,7 @@
                   <strong>Calculadora Kaiser 2024 · Sepsis precoz (activada automáticamente en ≥ 35 sem)</strong>
                   <span class="status-pill ${kaiser.severity === "danger" ? "status-danger" : kaiser.severity === "warn" ? "status-warn" : "status-ok"} num">Riesgo basal ${kaiser.riskBirth}/1000 · Posterior ${kaiser.posterior}/1000</span>
                 </div>
-                <div style="font-size:13px;color:var(--navy);font-weight:500">Recomendación: ${esc(kaiser.recommendation)}</div>
+                <div style="font-size:14px;color:var(--navy);font-weight:500">Recomendación: ${esc(kaiser.recommendation)}</div>
                 <div class="field-hint" style="margin-top:4px">Incidencia local usada: ${String(kaiser.incidence).replace(".", ",")} / 1.000 nacidos vivos (parámetro institucional) <span class="badge-confirm">A confirmar</span></div>
               </div>
             ` : `
@@ -891,7 +706,7 @@
             </div>
             ${ui.draftLoading === "admission" ? `
               <div class="skeleton-wrap" aria-live="polite">
-                <div style="display:flex;align-items:center;gap:10px;color:var(--teal-dark);font-size:13px;font-weight:600;margin-bottom:6px">
+                <div style="display:flex;align-items:center;gap:10px;color:var(--teal-dark);font-size:14px;font-weight:600;margin-bottom:6px">
                   <span class="spinner" aria-hidden="true"></span>
                   Consolidando antecedentes perinatales, Fenton 2025, calculadoras y diagnósticos CIE-10...
                 </div>
@@ -1198,12 +1013,9 @@
     return `
       <div class="page-header">
         <div>
-          <h1 class="page-title">Hospitalización y líneas de tiempo</h1>
-          <p class="page-desc">Lo que puede derivarse de los eventos no se vuelve a preguntar. Probá agregar un cambio respiratorio o nutricional para ver el recálculo en vivo.</p>
+          <p class="step-lead">Registrá solo los cambios (por ejemplo, de CPAP a cánula). Los días, totales y clasificaciones se calculan solos.</p>
         </div>
-        <div class="page-actions">
-          <button class="btn btn-secondary" type="button" data-nav="epicrisis">Ir a egreso y epicrisis</button>
-        </div>
+
       </div>
 
       <div class="system-tabs" role="tablist">
@@ -1212,9 +1024,9 @@
         `).join("")}
       </div>
 
-      ${ui.hospTab === "otros" ? "" : hospSchemaHtml(p, canEdit, ui.hospTab)}
-
       ${tabHtml}
+
+      ${ui.hospTab === "otros" ? "" : hospSchemaHtml(p, canEdit, ui.hospTab)}
     `;
   }
 
@@ -1239,8 +1051,7 @@
     return `
       <div class="page-header">
         <div>
-          <h1 class="page-title">Egreso, pesquisas obligatorias y epicrisis</h1>
-          <p class="page-desc">Sintetiza todas las líneas de tiempo por sistema. La firma médica humana cierra la internación y actualiza el estado del paciente.</p>
+          <p class="step-lead">Completá la condición de egreso y generá la epicrisis: se arma sola con lo cargado en la internación. Al firmarla se cierra la internación.</p>
         </div>
         <div class="page-actions">
           ${canEdit && !epiSigned ? `<button class="btn btn-secondary" type="button" id="btn-gen-epi-draft" ${ui.draftLoading === "epicrisis" ? "disabled" : ""}>${ui.draftLoading === "epicrisis" ? '<span class="spinner" aria-hidden="true"></span>Sintetizando...' : "Generar epicrisis"}</button>` : ""}
@@ -1285,7 +1096,7 @@
             </div>
             ${ui.draftLoading === "epicrisis" ? `
               <div class="skeleton-wrap" aria-live="polite">
-                <div style="display:flex;align-items:center;gap:10px;color:var(--teal-dark);font-size:13px;font-weight:600;margin-bottom:6px">
+                <div style="display:flex;align-items:center;gap:10px;color:var(--teal-dark);font-size:14px;font-weight:600;margin-bottom:6px">
                   <span class="spinner" aria-hidden="true"></span>
                   Integrando líneas de tiempo respiratoria, nutricional, IAAS, catéteres, ROP y cirugías...
                 </div>
@@ -1585,9 +1396,9 @@
       ${ui.importMode === "documento" ? docImportHtml(canImport) : `
 
       <div class="stepper" aria-label="Pasos de importación">
-        <div class="step-item ${step === 1 ? "active" : step > 1 ? "done" : ""}"><span class="step-num">1</span>Plantilla y carga de archivo</div>
-        <div class="step-item ${step === 2 ? "active" : step > 2 ? "done" : ""}"><span class="step-num">2</span>Validación y barrera 3-ID</div>
-        <div class="step-item ${step === 3 ? "active" : ""}"><span class="step-num">3</span>Bandeja de revisión humana</div>
+        <div class="step-item ${step === 1 ? "active" : step > 1 ? "done" : ""}"><span class="step-num">1</span>Elegir archivo</div>
+        <div class="step-item ${step === 2 ? "active" : step > 2 ? "done" : ""}"><span class="step-num">2</span>Verificar identidad (HC, sexo y fecha de nacimiento)</div>
+        <div class="step-item ${step === 3 ? "active" : ""}"><span class="step-num">3</span>Revisar y confirmar</div>
       </div>
 
       ${ui.importLoading ? `
@@ -1664,7 +1475,7 @@
                           </div>
                         </td>
                         <td style="max-width:300px">
-                          ${row.warnings.length ? row.warnings.map((w) => `<div style="font-size:12.5px;color:${isBlocked ? "var(--danger-ink)" : "var(--warn-ink)"}">${esc(w)}</div>`).join("") : `<span class="field-hint">Sin advertencias · listo para aprobar</span>`}
+                          ${row.warnings.length ? row.warnings.map((w) => `<div style="font-size:14px;color:${isBlocked ? "var(--danger-ink)" : "var(--warn-ink)"}">${esc(w)}</div>`).join("") : `<span class="field-hint">Sin advertencias · listo para aprobar</span>`}
                         </td>
                         <td>
                           ${isBlocked ? `
@@ -1727,10 +1538,10 @@
               <div class="tri-seg-na" style="width:${pA}%" title="Fuera de riesgo (No aplica): ${m.na}"></div>
             </div>
             <div class="tri-legend num">
-              <span><i class="dot" style="background:var(--teal)"></i>Sí: ${m.yes}</span>
-              <span><i class="dot" style="background:#a8c9cc"></i>No: ${m.no}</span>
-              ${m.missing ? `<span style="color:var(--warn-ink);font-weight:600"><i class="dot" style="background:#d98e2b"></i>Sin dato (deuda): ${m.missing}</span>` : ""}
-              ${m.na ? `<span><i class="dot" style="background:#cfd8df"></i>Fuera de riesgo: ${m.na}</span>` : ""}
+              <span><i class="dot tri-seg-yes"></i>Sí: ${m.yes}</span>
+              <span><i class="dot tri-seg-no"></i>No: ${m.no}</span>
+              ${m.missing ? `<span style="color:var(--warn-ink);font-weight:600"><i class="dot tri-seg-miss"></i>Dato pendiente: ${m.missing}</span>` : ""}
+              ${m.na ? `<span><i class="dot tri-seg-na"></i>Fuera de riesgo: ${m.na}</span>` : ""}
             </div>
           </td>
         </tr>
@@ -1741,7 +1552,7 @@
       <div class="page-header">
         <div>
           <h1 class="page-title">Estadísticas e indicadores de la unidad</h1>
-          <p class="page-desc">Cada tasa declara su denominador explícito y separa Dato, Fuera de riesgo (No aplica) y Deuda de registro (Sin dato).</p>
+          <p class="page-desc">Cada tasa dice sobre cuántos bebés se calcula. Un bebé sin el dato no se cuenta como sano: se muestra aparte como pendiente.</p>
         </div>
       </div>
 
@@ -1804,14 +1615,14 @@
       <section class="panel">
         <div class="panel-head">
           <div>
-            <h2 class="panel-title">Morbilidades principales con tricotomía epidemiológica</h2>
-            <p class="panel-sub">Un paciente sin dato nunca se suma como sano; los pacientes fuera de riesgo salen del denominador</p>
+            <h2 class="panel-title">Morbilidades</h2>
+            <p class="panel-sub">Los bebés fuera de riesgo no entran en la cuenta; los que tienen el dato pendiente se informan aparte</p>
           </div>
         </div>
         <div class="panel-body tight">
           <div class="table-wrap">
             <table class="clinical-table">
-              <thead><tr><th>Indicador</th><th>Tasa (Numerador / Denominador)</th><th>Desglose Dato · Deuda · Fuera de riesgo</th></tr></thead>
+              <thead><tr><th>Indicador</th><th>Tasa (casos sobre bebés con el dato)</th><th>Cómo se compone</th></tr></thead>
               <tbody>
                 ${morbidities.map(([lbl, m]) => triRow(lbl, m)).join("")}
               </tbody>
@@ -2168,8 +1979,9 @@
     renderPatientStrip();
 
     const views = {
-      inicio: viewInicio,
-      pacientes: viewPacientes,
+      unidad: viewUnidad,
+      inicio: viewUnidad,
+      pacientes: viewUnidad,
       ingreso: viewIngreso,
       hosp: viewHosp,
       epicrisis: viewEpicrisis,
@@ -2179,7 +1991,7 @@
       configuracion: viewConfiguracion
     };
 
-    document.getElementById("main").innerHTML = (views[ui.route] || viewInicio)();
+    document.getElementById("main").innerHTML = (views[ui.route] || viewUnidad)();
     bindViewEvents();
   }
 
@@ -2204,9 +2016,9 @@
       "Guion de la reunión con el servicio",
       `<p class="field-hint" style="margin:0 0 12px">Objetivo: salir con respuestas a cuatro preguntas. ¿Falta alguna variable? ¿Sobra alguna? ¿El borrador se redactaría distinto? ¿Las tasas son las que informan a Jefatura?</p>
       <ol class="guide-steps">
-        <li><strong>Inicio y perfiles (2 min).</strong> Censo, ocupación y deuda de registro. Cambiá a <em>Dirección</em> para mostrar la vista de solo lectura.
-          <span class="guide-ask">Preguntar: ¿los sectores y camas son los reales?</span></li>
-        <li><strong>Ficha de ingreso (4 min).</strong> Creá un paciente solo con el nombre. Abrí <em>Mateo Cabrera</em> (Kaiser) y <em>Alma Ríos</em> (CRIB II). Abrí y cerrá la rama de embarazo gemelar.
+        <li><strong>Unidad y perfiles (2 min).</strong> Plano de cunas, panel «Para firmar» y datos por completar. Cambiá a <em>Dirección</em> para mostrar la vista de solo lectura.
+          <span class="guide-ask">Preguntar: ¿los sectores y cunas son los reales?</span></li>
+        <li><strong>Ficha de ingreso (4 min).</strong> Tocá una cuna libre y creá un paciente solo con el nombre. Abrí <em>Mateo Cabrera</em> (Kaiser) y <em>Alma Ríos</em> (CRIB II). Abrí y cerrá la rama de embarazo gemelar.
           <span class="guide-ask">Preguntar: recorrer las etiquetas <span class="badge-confirm">A confirmar</span>, ¿cuáles registran hoy? ¿Cargan el SIP?</span></li>
         <li><strong>Hospitalización y epicrisis (3 min).</strong> <em>Alma Ríos</em>: línea respiratoria y DBP calculada. <em>Martina Álvarez</em>: sífilis congénita. Generá la epicrisis y leé dos secciones.
           <span class="guide-ask">Preguntar: ¿la redacción y el orden son los que usan?</span></li>
@@ -2219,7 +2031,7 @@
     );
   }
 
-  function showNewPatientModal() {
+  function showNewPatientModal(presetSector) {
     openModal(
       "Alta rápida de paciente",
       `<p class="field-hint" style="margin-bottom:12px">Solo el nombre es obligatorio. Lo que no completes queda como «Sin responder» y se carga después en la ficha de ingreso: la app nunca rellena datos clínicos por su cuenta.</p>
@@ -2230,7 +2042,7 @@
         <div class="field"><label for="np-mother">Nombre de la madre</label><input class="input" id="np-mother" placeholder="Opcional" /></div>
         <div class="field"><label for="np-bdate">Fecha de nacimiento</label><input class="input" id="np-bdate" type="date" /></div>
         <div class="field"><label for="np-adate">Fecha de ingreso a la unidad</label><input class="input" id="np-adate" type="date" value="${ENG.REF_DATE}" /></div>
-        <div class="field"><label for="np-sector">Sector inicial</label><select class="select" id="np-sector"><option value="">Sin asignar</option>${DATA.SECTORS.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("")}</select></div>
+        <div class="field"><label for="np-sector">Sector inicial</label><select class="select" id="np-sector"><option value="">Sin asignar</option>${DATA.SECTORS.map((s) => `<option value="${esc(s.id)}" ${s.id === presetSector ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></div>
         <div class="field"><label for="np-gaw">EG semanas</label><input class="input num" id="np-gaw" type="number" min="22" max="43" placeholder="Opcional" /></div>
         <div class="field"><label for="np-gad">EG días</label><input class="input num" id="np-gad" type="number" min="0" max="6" placeholder="Opcional" /></div>
         <div class="field"><label for="np-wt">Peso al nacer (g)</label><input class="input num" id="np-wt" type="number" min="350" max="5500" placeholder="Opcional" /></div>
@@ -2260,7 +2072,7 @@
   function showPrintPreviewModal(title, text) {
     openModal(
       title,
-      `<div style="background:#ffffff;border:1px solid var(--border-strong);padding:20px;font-family:var(--font-mono);font-size:12px;line-height:1.65;white-space:pre-wrap">${esc(text || "Generá primero el borrador para previsualizar el documento.")}</div>`,
+      `<div style="background:#ffffff;border:1px solid var(--border-strong);padding:20px;font-family:var(--font-mono);font-size:13px;line-height:1.65;white-space:pre-wrap">${esc(text || "Generá primero el borrador para previsualizar el documento.")}</div>`,
       `<button class="btn btn-secondary" type="button" data-close-modal>Cerrar</button>
        <button class="btn btn-primary" type="button" onclick="window.print()">Imprimir / Guardar PDF</button>`
     );
@@ -2398,9 +2210,27 @@
       };
     }
 
+    // Unidad: resaltar los bebés con datos por completar
+    const btnMissing = document.getElementById("btn-unit-missing");
+    if (btnMissing) btnMissing.onclick = () => { ui.unitFilter = ui.unitFilter === "missing" ? "" : "missing"; render(); };
+
+    // Búsqueda en Unidad
+    const unitSearch = document.getElementById("unit-search");
+    if (unitSearch) {
+      unitSearch.oninput = () => {
+        ui.unitSearch = unitSearch.value;
+        render();
+        const again = document.getElementById("unit-search");
+        if (again) { again.focus(); again.setSelectionRange(ui.unitSearch.length, ui.unitSearch.length); }
+      };
+    }
+    main.querySelectorAll("tr[data-open-patient]").forEach((tr) => {
+      tr.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); tr.click(); } };
+    });
+
     // New patient triggers
     const btnNew = document.getElementById("btn-new-patient");
-    if (btnNew) btnNew.onclick = showNewPatientModal;
+    if (btnNew) btnNew.onclick = () => showNewPatientModal();
 
     // Patient filters
     ["pf-text", "pf-status", "pf-sector", "pf-ga"].forEach((id) => {
@@ -2948,6 +2778,9 @@
   document.addEventListener("click", (e) => {
     const t = e.target;
 
+    const freeCuna = t.closest("[data-new-patient-sector]");
+    if (freeCuna) { showNewPatientModal(freeCuna.getAttribute("data-new-patient-sector")); return; }
+
     const importMode = t.closest("[data-import-mode]");
     if (importMode) { ui.importMode = importMode.getAttribute("data-import-mode"); render(); return; }
 
@@ -3289,7 +3122,7 @@
     ui.activeBatch = null;
     ui.importStep = 1;
     saveState();
-    toast("Maqueta reiniciada a los 8 casos ficticios iniciales.");
+    toast(`Maqueta reiniciada: ${state.patients.length} pacientes ficticios.`);
     navigate("inicio");
   };
 

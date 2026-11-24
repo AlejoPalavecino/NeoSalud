@@ -45,15 +45,24 @@ Arriba a la derecha se cambia el perfil activo. La maqueta trae cinco:
 
 ## 3. Recorrido por sección: qué mostrar y qué preguntar
 
-### 3.1 Inicio y censo
+### 3.1 Unidad
 
-**Mostrar:** 19 internados (70 % de ocupación), ocupación por sector, ingresos incompletos y la bandeja de deuda de registro.
-**Preguntar:** ¿los sectores y la cantidad de camas son los reales? ¿Qué quieren ver primero al empezar una guardia?
+Es la pantalla de inicio: un plano de cunas por sector. Cada cuna ocupada muestra al bebé, su EG, el día de vida, el peso y, si corresponde, una sola marca (rojo suave = falta una firma, amarillo = faltan datos).
 
-### 3.2 Pacientes
+**Mostrar:**
 
-**Mostrar:** filtros por nombre, HC, DNI materno, estado, sector y EG. Crear un paciente con **solo el nombre**: queda en «Ingreso incompleto» y todo lo clínico como «Sin responder».
-**Preguntar:** ¿con qué datos mínimos abren hoy un ingreso? ¿Usan un identificador propio (además de `NEO-AAAA-NNNNNN`)?
+- 19 de 27 cunas ocupadas. Tocar una cuna abre la historia del bebé directamente en el paso que necesita atención: el ingreso si falta firmarlo, la internación si está internado, el egreso si ya se fue.
+- Tocar una **cuna libre** abre el ingreso rápido con el sector ya elegido. Solo el nombre es obligatorio y todo lo clínico queda como «Sin responder».
+- El panel **Para firmar** lista solo los documentos que esperan firma. La línea «N bebés tienen datos por completar» resalta esas cunas en el mapa.
+- Debajo, **Egresos y fallecidos**, con búsqueda por nombre, HC o DNI de la madre.
+
+**Preguntar:** ¿los sectores y la cantidad de cunas son los reales? ¿Qué quieren ver primero al empezar una guardia? ¿Con qué datos mínimos abren hoy un ingreso?
+
+### 3.2 La historia de cada bebé
+
+Arriba se ve quién es el bebé, con un enlace para volver a la unidad, y los tres pasos de la internación en orden: **1 Ingreso, 2 Internación, 3 Egreso**. Cada paso dice en qué estado está («Firmado», «Borrador sin firmar», «Al dar el alta»). Desde ahí también se cambia de sector.
+
+**Preguntar:** ¿el recorrido Ingreso → Internación → Egreso refleja cómo trabajan?
 
 ### 3.3 Ficha de ingreso
 
@@ -119,8 +128,8 @@ Dos pestañas:
 
 ## 4. Guion sugerido de 15 minutos
 
-1. **0–2 · Inicio y perfiles:** censo, ocupación y deuda de registro. Cambiar a *Dirección* para mostrar la vista de solo lectura.
-2. **2–6 · Ingreso:** crear un paciente con solo el nombre. Abrir *Mateo Cabrera* (Kaiser) y *Alma Ríos* (CRIB II). Abrir y cerrar la rama de embarazo gemelar. Recorrer las etiquetas «A confirmar» y preguntar cuáles usan.
+1. **0–2 · Unidad y perfiles:** plano de cunas, panel «Para firmar» y datos por completar. Cambiar a *Dirección* para mostrar la vista de solo lectura.
+2. **2–6 · Ingreso:** tocar una cuna libre y crear un paciente con solo el nombre. Abrir *Mateo Cabrera* (Kaiser) y *Alma Ríos* (CRIB II). Abrir y cerrar la rama de embarazo gemelar. Recorrer las etiquetas «A confirmar» y preguntar cuáles usan.
 3. **6–9 · Hospitalización y epicrisis:** *Alma Ríos* → línea respiratoria y DBP calculada. *Martina Álvarez* → sífilis congénita. Generar la epicrisis y leer dos secciones en voz alta.
 4. **9–11 · Importación:** procesar la nota de sala de partos y aceptar o rechazar campos.
 5. **11–13 · Estadísticas y exportación:** tasas con denominador y las 7 hojas del Excel.

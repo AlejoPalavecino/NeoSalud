@@ -1,41 +1,54 @@
-/* NeoSalud · Estilo clínico limpio, suave y sereno
-   Tipografía: Plus Jakarta Sans + DM Mono (solo códigos clínicos)
-   Geometría redondeada y bajo ruido visual */
+/* NeoSalud · Estilo «calma clínica»
+   Objetivo: lectura cómoda en guardias largas. Fondo de poco brillo, texto gris oscuro
+   (no negro puro), un solo color de acento y estados con tintes suaves que solo aparecen
+   donde dan información. Tipografía Atkinson Hyperlegible (diseñada para máxima
+   legibilidad); la variante mono solo para identificadores (HC, DNI, ID). */
 
 :root {
-  --canvas: #f5f8fa;
-  --surface: #ffffff;
-  --surface-subtle: #f1f5f8;
-  --surface-clinical: #ebf5f5;
-  --navy: #122c42;
-  --ink: #223b50;
-  --muted: #62788a;
-  --teal: #0d7a7d;
-  --teal-dark: #095e61;
-  --border: #e3ebf0;
-  --border-strong: #ccd8e0;
+  /* Superficies */
+  --canvas: #f3f6f5;          /* fondo general, gris verdoso con poco brillo */
+  --surface: #ffffff;         /* donde se lee o se escribe */
+  --surface-subtle: #f7f9f8;
+  --surface-clinical: #eef2fa; /* tinte del acento: selección, ayudas */
 
-  --ok-bg: #eaf7f0;
-  --ok-ink: #166544;
-  --warn-bg: #fef6e9;
-  --warn-border: #edd2a8;
-  --warn-ink: #94550f;
-  --danger-bg: #fdf0f2;
-  --danger-border: #ecc1c8;
-  --danger-ink: #a12338;
-  --na-bg: #eff3f6;
-  --na-ink: #53687a;
+  /* Texto */
+  --navy: #1d2a35;            /* títulos */
+  --ink: #2a3640;             /* cuerpo */
+  --muted: #5e6c76;           /* secundario (contraste AA sobre blanco) */
 
-  --rail-w: 244px;
-  --topbar-h: 64px;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
-  --shadow-soft: 0 1px 2px rgba(18, 44, 66, 0.03), 0 4px 14px rgba(18, 44, 66, 0.03);
+  /* Acento único (selección, acción principal, enlaces) */
+  --accent: #2f55a4;
+  --accent-dark: #233f7c;
+  --teal: var(--accent);       /* alias histórico */
+  --teal-dark: var(--accent-dark);
 
-  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --border: #e2e8e5;
+  --border-strong: #ccd5d1;
+
+  /* Estados: tintes suaves con texto oscuro de la misma familia */
+  --ok-bg: #eaf4ee;   --ok-ink: #2c6a4a;                          /* firmado / completo */
+  --warn-bg: #fff6d6; --warn-border: #efd98a; --warn-ink: #7a5b00; /* falta / a confirmar */
+  --danger-bg: #fbeeeb; --danger-border: #efc9c1; --danger-ink: #a63d2a; /* requiere acción */
+  --na-bg: #eff2f1;   --na-ink: #55636c;                          /* neutro / no aplica */
+
+  --rail-w: 232px;
+  --topbar-h: 60px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --shadow-soft: none;
+
+  /* Escala tipográfica (mínimo 13 px) */
+  --fs-xs: 13px;
+  --fs-sm: 14px;
+  --fs-md: 15px;
+  --fs-lg: 16px;
+  --fs-xl: 18px;
+  --fs-2xl: 24px;
+
+  --font-sans: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Atkinson Hyperlegible Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 *, *::before, *::after {
@@ -48,8 +61,8 @@ html, body {
   background: var(--canvas);
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 14px;
-  line-height: 1.55;
+  font-size: 16px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -138,14 +151,14 @@ a:focus-visible {
 }
 
 .brand-name {
-  font-size: 16.5px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--navy);
   letter-spacing: -0.02em;
 }
 
 .brand-sub {
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--muted);
   font-weight: 500;
 }
@@ -166,7 +179,7 @@ a:focus-visible {
 }
 
 .nav-group-label {
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--muted);
   padding: 0 12px 6px;
@@ -183,7 +196,7 @@ a:focus-visible {
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--ink);
-  font-size: 13.5px;
+  font-size: 15px;
   font-weight: 500;
   text-align: left;
   transition: background-color 0.14s ease, color 0.14s ease;
@@ -216,7 +229,7 @@ a:focus-visible {
 }
 
 .nav-count {
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 600;
   padding: 2px 7px;
   border-radius: 999px;
@@ -246,7 +259,7 @@ a:focus-visible {
   margin-bottom: 6px;
   background: var(--surface-subtle);
   border-radius: var(--radius-md);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.35;
 }
 
@@ -279,7 +292,7 @@ a:focus-visible {
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 500;
   text-align: left;
   transition: background-color 0.14s ease, color 0.14s ease;
@@ -324,7 +337,7 @@ a:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13.5px;
+  font-size: 15px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -359,7 +372,7 @@ a:focus-visible {
   border-radius: 999px;
   background: var(--surface-clinical);
   color: var(--teal-dark);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -373,13 +386,13 @@ a:focus-visible {
 }
 
 .role-name {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--navy);
 }
 
 .role-label {
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -436,7 +449,7 @@ a:focus-visible {
   flex-wrap: wrap;
   align-items: center;
   gap: 14px;
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--ink);
 }
 
@@ -469,7 +482,7 @@ a:focus-visible {
   background: transparent;
   padding: 6px 14px;
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--muted);
   transition: background-color 0.14s ease, color 0.14s ease;
@@ -506,7 +519,7 @@ a:focus-visible {
 
 .page-title {
   margin: 0;
-  font-size: 23px;
+  font-size: 24px;
   font-weight: 700;
   color: var(--navy);
   letter-spacing: -0.025em;
@@ -515,7 +528,7 @@ a:focus-visible {
 
 .page-desc {
   margin: 5px 0 0;
-  font-size: 13.5px;
+  font-size: 15px;
   color: var(--muted);
   max-width: 68ch;
 }
@@ -536,7 +549,7 @@ a:focus-visible {
   padding: 9px 16px;
   border-radius: var(--radius-md);
   border: 1px solid transparent;
-  font-size: 13.5px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
@@ -569,7 +582,7 @@ a:focus-visible {
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: #f9dfe3;
+  background: #f6e0db;
 }
 
 .btn-ghost {
@@ -584,7 +597,7 @@ a:focus-visible {
 
 .btn-sm {
   padding: 6px 12px;
-  font-size: 12.5px;
+  font-size: 14px;
   border-radius: var(--radius-sm);
 }
 
@@ -600,14 +613,14 @@ a:focus-visible {
   gap: 5px;
   padding: 3px 10px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
 }
 
 .status-hosp { background: var(--surface-clinical); color: var(--teal-dark); }
 .status-incomp { background: var(--warn-bg); color: var(--warn-ink); }
-.status-alta { background: #eaf0fd; color: #284b96; }
+.status-alta { background: var(--surface-clinical); color: #284b96; }
 .status-egr { background: var(--ok-bg); color: var(--ok-ink); }
 .status-fall { background: var(--danger-bg); color: var(--danger-ink); }
 .status-na { background: var(--na-bg); color: var(--na-ink); }
@@ -637,7 +650,7 @@ a:focus-visible {
 }
 
 .ledger-label {
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--muted);
   font-weight: 500;
 }
@@ -653,11 +666,11 @@ a:focus-visible {
 }
 
 .ledger-value.is-warn { color: var(--warn-ink); }
-.ledger-value.is-teal { color: var(--teal); }
+.ledger-value.is-teal { color: var(--navy); }
 
 .ledger-sub {
   margin-top: 5px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -683,7 +696,7 @@ a:focus-visible {
 
 .panel-title {
   margin: 0;
-  font-size: 15.5px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--navy);
   letter-spacing: -0.01em;
@@ -691,7 +704,7 @@ a:focus-visible {
 
 .panel-sub {
   margin: 2px 0 0;
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--muted);
 }
 
@@ -736,7 +749,7 @@ a:focus-visible {
   justify-content: space-between;
   align-items: baseline;
   margin-bottom: 6px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .sector-row-top strong {
@@ -783,13 +796,13 @@ a:focus-visible {
 }
 
 .queue-title {
-  font-size: 13.5px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--navy);
 }
 
 .queue-detail {
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--muted);
   margin-top: 3px;
 }
@@ -803,14 +816,14 @@ a:focus-visible {
 table.clinical-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .clinical-table th {
   text-align: left;
   font-weight: 600;
   color: var(--muted);
-  background: #f8fafc;
+  background: var(--surface-subtle);
   padding: 11px 18px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
@@ -823,7 +836,7 @@ table.clinical-table {
 }
 
 .clinical-table tbody tr:hover {
-  background: #f9fbfc;
+  background: var(--surface-subtle);
 }
 
 .clinical-table tbody tr:last-child td {
@@ -851,7 +864,7 @@ table.clinical-table {
   align-items: flex-end;
   gap: 14px;
   padding: 16px 22px;
-  background: #f9fbfc;
+  background: var(--surface-subtle);
   border-bottom: 1px solid var(--border);
 }
 
@@ -863,13 +876,13 @@ table.clinical-table {
 }
 
 .field label {
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--ink);
 }
 
 .field-hint {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -880,14 +893,14 @@ table.clinical-table {
   border-radius: var(--radius-sm);
   background: #ffffff;
   color: var(--ink);
-  font-size: 13.5px;
+  font-size: 15px;
   transition: border-color 0.14s ease, box-shadow 0.14s ease;
 }
 
 .input:hover:not(:disabled),
 .select:hover:not(:disabled),
 .textarea:hover:not(:disabled) {
-  border-color: #aebfcf;
+  border-color: var(--muted);
 }
 
 .input:disabled, .select:disabled, .textarea:disabled {
@@ -911,14 +924,14 @@ table.clinical-table {
 .nested-branch {
   margin-top: 16px;
   padding: 16px 18px;
-  background: #f6fbfb;
-  border: 1px solid #cce3e4;
+  background: var(--surface-clinical);
+  border: 1px solid #cfd9ee;
   border-left: 3px solid var(--teal);
   border-radius: var(--radius-md);
 }
 
 .nested-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--teal-dark);
   margin: 0 0 12px;
@@ -941,13 +954,13 @@ table.clinical-table {
 }
 
 .derived-label {
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--muted);
   font-weight: 500;
 }
 
 .derived-val {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--navy);
   font-variant-numeric: tabular-nums;
@@ -956,7 +969,7 @@ table.clinical-table {
 .calc-box {
   padding: 16px 18px;
   border-radius: var(--radius-md);
-  border: 1px solid #cce3e4;
+  border: 1px solid #cfd9ee;
   background: var(--surface-clinical);
 }
 
@@ -981,7 +994,7 @@ table.clinical-table {
 
 .calc-header strong {
   color: var(--navy);
-  font-size: 14px;
+  font-size: 15px;
 }
 
 /* Searchable CIE-10 Combobox */
@@ -1010,7 +1023,7 @@ table.clinical-table {
   border-bottom: 1px solid var(--border);
   background: #ffffff;
   text-align: left;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .combo-option:last-child {
@@ -1036,7 +1049,7 @@ table.clinical-table {
   background: var(--surface-subtle);
   border: 1px solid var(--border);
   border-radius: 999px;
-  font-size: 12.5px;
+  font-size: 14px;
 }
 
 .dx-tag button {
@@ -1056,7 +1069,7 @@ table.clinical-table {
   padding: 13px 16px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
-  font-size: 13px;
+  font-size: 14px;
   margin-bottom: 14px;
   display: flex;
   flex-wrap: wrap;
@@ -1079,13 +1092,13 @@ table.clinical-table {
 
 .banner-ok {
   background: var(--ok-bg);
-  border-color: #bfe4cf;
+  border-color: #c9e3d3;
   color: var(--ok-ink);
 }
 
 .banner-info {
   background: var(--surface-clinical);
-  border-color: #cce3e4;
+  border-color: #cfd9ee;
   color: var(--navy);
 }
 
@@ -1106,7 +1119,7 @@ table.clinical-table {
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .draft-textarea {
@@ -1115,7 +1128,7 @@ table.clinical-table {
   border: 0;
   padding: 18px 20px;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: 14px;
   line-height: 1.65;
   color: var(--ink);
   background: #ffffff;
@@ -1124,9 +1137,9 @@ table.clinical-table {
 
 .draft-sheet-foot {
   padding: 10px 18px;
-  background: #f9fbfc;
+  background: var(--surface-subtle);
   border-top: 1px solid var(--border);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   display: flex;
   flex-wrap: wrap;
@@ -1171,14 +1184,14 @@ table.clinical-table {
 
 .loading-title {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--navy);
 }
 
 .loading-step-text {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--muted);
 }
 
@@ -1208,7 +1221,7 @@ table.clinical-table {
 .skeleton-line {
   height: 12px;
   border-radius: 999px;
-  background: linear-gradient(90deg, #edf2f5 25%, #e2eaef 50%, #edf2f5 75%);
+  background: linear-gradient(90deg, var(--na-bg) 25%, var(--border) 50%, var(--na-bg) 75%);
   background-size: 200% 100%;
   animation: neo-shimmer 1.15s ease-in-out infinite;
 }
@@ -1222,29 +1235,32 @@ table.clinical-table {
 .system-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 2px 4px;
   margin-bottom: 18px;
+  border-bottom: 1px solid var(--border);
 }
 
+/* Pestañas como subrayado: indican dónde estás sin competir con el contenido */
 .sys-tab {
-  padding: 8px 14px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 13px;
+  padding: 9px 12px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  color: var(--muted);
+  font-size: var(--fs-sm);
   font-weight: 500;
-  transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+  cursor: pointer;
+  transition: color 0.14s ease, border-color 0.14s ease;
 }
 
 .sys-tab:hover {
-  background: var(--surface-subtle);
+  color: var(--navy);
 }
 
 .sys-tab.active {
-  background: var(--navy);
-  color: #ffffff;
-  border-color: var(--navy);
+  color: var(--accent-dark);
+  border-bottom-color: var(--accent);
 }
 
 .coverage-toggle {
@@ -1259,7 +1275,7 @@ table.clinical-table {
   border: 0;
   padding: 5px 12px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   background: transparent;
   color: var(--muted);
@@ -1295,26 +1311,26 @@ table.clinical-table {
   gap: 4px;
 }
 
-.tl-node.mod-high { border-top-color: #b43448; }
+.tl-node.mod-high { border-top-color: var(--danger-ink); }
 .tl-node.mod-mid { border-top-color: #c87b1e; }
 .tl-node.mod-low { border-top-color: #0d7a7d; }
 .tl-node.mod-aa { border-top-color: #1c7c54; }
 
 .tl-day {
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--muted);
   display: flex;
   justify-content: space-between;
 }
 
 .tl-mod {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--navy);
 }
 
 .tl-meta {
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--ink);
 }
 
@@ -1329,15 +1345,15 @@ table.clinical-table {
 }
 
 .tri-seg-yes { background: var(--teal); }
-.tri-seg-no { background: #a8d0d1; }
-.tri-seg-miss { background: #e09634; }
-.tri-seg-na { background: #d4dde4; }
+.tri-seg-no { background: #b7c6e6; }
+.tri-seg-miss { background: #d9a441; }
+.tri-seg-na { background: var(--border-strong); }
 
 .tri-legend {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -1366,7 +1382,7 @@ table.clinical-table {
   display: flex;
   align-items: center;
   gap: 9px;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--muted);
 }
 
@@ -1378,7 +1394,7 @@ table.clinical-table {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -1404,7 +1420,7 @@ table.clinical-table {
   border: 1.5px dashed var(--border-strong);
   border-radius: var(--radius-md);
   padding: 22px;
-  background: #f9fbfc;
+  background: var(--surface-subtle);
 }
 
 .option-tile {
@@ -1455,7 +1471,7 @@ table.clinical-table {
 
 .modal-head h2 {
   margin: 0;
-  font-size: 16.5px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--navy);
 }
@@ -1468,7 +1484,7 @@ table.clinical-table {
 .modal-foot {
   padding: 14px 22px;
   border-top: 1px solid var(--border);
-  background: #f9fbfc;
+  background: var(--surface-subtle);
   display: flex;
   justify-content: flex-end;
   gap: 8px;
@@ -1513,7 +1529,7 @@ table.clinical-table {
   background: var(--navy);
   color: #ffffff;
   border-radius: var(--radius-md);
-  font-size: 13px;
+  font-size: 14px;
   box-shadow: 0 10px 26px rgba(18, 44, 66, 0.22);
   max-width: 360px;
 }
@@ -1527,7 +1543,7 @@ table.clinical-table {
 .empty-state strong {
   display: block;
   color: var(--navy);
-  font-size: 15px;
+  font-size: 16px;
   margin-bottom: 6px;
 }
 
@@ -1624,7 +1640,7 @@ table.clinical-table {
   align-items: center;
   gap: 8px 20px;
   margin: 0 0 16px;
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--ink);
 }
 
@@ -1649,7 +1665,7 @@ table.clinical-table {
   background: var(--warn-bg);
   border: 1px dashed var(--warn-border);
   color: var(--warn-ink);
-  font-size: 10.5px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.01em;
   white-space: nowrap;
@@ -1726,11 +1742,9 @@ details.form-section[open] > .panel-body {
 
 /* Subcampo de una rama condicional: aparece junto a su campo padre */
 .field.is-branch {
-  padding: 8px 10px 10px;
-  margin: -8px -10px -10px;
-  background: #f3fafa;
-  border-left: 3px solid var(--teal);
-  border-radius: var(--radius-sm);
+  padding-left: 10px;
+  margin-left: -12px;
+  border-left: 2px solid #b7c6e6;
   animation: neo-section-in 0.2s ease-out;
 }
 
@@ -1780,7 +1794,7 @@ details.form-section[open] > .panel-body {
   padding: 8px 14px;
   background: var(--surface-subtle);
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ink);
 }
@@ -1789,22 +1803,22 @@ details.form-section[open] > .panel-body {
   margin: 0;
   padding: 14px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.7;
   white-space: pre-wrap;
   color: var(--ink);
 }
 
 .doc-mark {
-  background: #fff3c4;
+  background: var(--warn-bg);
   color: inherit;
   border-radius: 3px;
   padding: 0 2px;
 }
 
 .doc-mark.is-focus {
-  background: #ffd76a;
-  outline: 2px solid #e0a800;
+  background: #f7dd77;
+  outline: 2px solid var(--warn-border);
 }
 
 tr[data-doc-focus] { cursor: pointer; }
@@ -1830,7 +1844,7 @@ tr.row-conflict td { background: var(--warn-bg); }
   padding-left: 20px;
   display: grid;
   gap: 12px;
-  font-size: 13.5px;
+  font-size: 15px;
   line-height: 1.55;
 }
 
@@ -1841,6 +1855,229 @@ tr.row-conflict td { background: var(--warn-bg); }
   border-left: 3px solid var(--teal);
   background: var(--surface-clinical);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--teal-dark);
+}
+
+/* ===================== Rediseño: navegación, Unidad e historia ===================== */
+.nav-item { font-size: var(--fs-md); padding: 10px 12px; }
+.nav-group-label { display: none; }
+
+.crumb-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+}
+.crumb-link:hover { text-decoration: underline; }
+#breadcrumb { display: flex; gap: 8px; align-items: center; color: var(--muted); }
+
+/* Unidad */
+.unit-header { align-items: flex-end; }
+.unit-search { width: 300px; max-width: 100%; }
+.unit-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 28px;
+  align-items: start;
+}
+.sector { margin-bottom: 22px; }
+.sector-title {
+  margin: 0 0 10px;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--navy);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.sector-count { font-size: var(--fs-sm); font-weight: 400; color: var(--muted); }
+.cuna-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  gap: 10px;
+}
+.cuna {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 112px;
+  padding: 12px 14px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.cuna:hover { border-color: var(--accent); }
+.cuna:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cuna-name { font-weight: 600; font-size: var(--fs-md); color: var(--navy); }
+.cuna-facts { font-size: var(--fs-sm); color: var(--muted); }
+.cuna-issue {
+  margin-top: auto;
+  align-self: flex-start;
+  font-size: var(--fs-xs);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.tone-action { background: var(--danger-bg); color: var(--danger-ink); }
+.tone-missing { background: var(--warn-bg); color: var(--warn-ink); }
+.tone-ok { background: transparent; color: var(--muted); padding-left: 0; }
+.cuna.is-dimmed { opacity: 0.35; }
+.cuna-free {
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+.cuna-free span { font-size: var(--fs-xs); color: var(--accent); }
+button.cuna-free:hover { background: var(--surface-clinical); border-color: var(--accent); }
+div.cuna-free { cursor: default; }
+
+.unit-todo {
+  position: sticky;
+  top: calc(var(--topbar-h) + 16px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+.aside-title { margin: 0 0 10px; font-size: var(--fs-lg); font-weight: 600; color: var(--navy); }
+.todo-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.todo-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+}
+.todo-item:hover { background: var(--surface-subtle); }
+.todo-item strong { display: block; font-size: var(--fs-sm); color: var(--navy); }
+.todo-text { display: block; font-size: var(--fs-sm); color: var(--muted); }
+.todo-mark { flex: none; width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; }
+.todo-mark.tone-action { background: var(--danger-ink); }
+.todo-mark.tone-missing { background: #d9a441; }
+
+.closed-list { margin-top: 12px; }
+.rows-clickable tbody tr { cursor: pointer; }
+.rows-clickable tbody tr:hover td { background: var(--surface-subtle); }
+.rows-clickable tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* Historia del paciente */
+.patient-strip { background: var(--surface); border-bottom: 1px solid var(--border); }
+.history-head { padding: 14px 32px 0; max-width: 1280px; }
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.back-link:hover { text-decoration: underline; }
+.history-id { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
+.history-name { margin: 0; font-size: var(--fs-2xl); font-weight: 700; color: var(--navy); letter-spacing: -0.01em; }
+.history-facts { margin: 4px 0 14px; color: var(--ink); font-size: var(--fs-md); }
+.history-ids { margin-left: 8px; font-size: var(--fs-xs); color: var(--muted); }
+.hsteps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; }
+.hstep {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px 12px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+}
+.hstep:hover { background: var(--surface-subtle); }
+.hstep.is-current { border-bottom-color: var(--accent); }
+.hstep-num {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--muted);
+}
+.hstep.is-current .hstep-num { border-color: var(--accent); background: var(--accent); color: #fff; }
+.hstep-ok .hstep-num { border-color: var(--ok-ink); color: var(--ok-ink); }
+.hstep-title { display: block; font-weight: 600; color: var(--navy); }
+.hstep-state { display: block; font-size: var(--fs-xs); color: var(--muted); }
+.hstep-action .hstep-state { color: var(--danger-ink); }
+.hstep-ok .hstep-state { color: var(--ok-ink); }
+
+@media (max-width: 1040px) {
+  .unit-layout { grid-template-columns: minmax(0, 1fr); }
+  .unit-todo { position: static; order: -1; }
+}
+@media (max-width: 680px) {
+  .history-head { padding: 12px 16px 0; }
+  /* En el celular los tres pasos quedan en una fila compacta: número y nombre */
+  .hstep { padding: 8px 6px 10px; gap: 6px; }
+  .hstep-state { display: none; }
+  .hstep-num { width: 22px; height: 22px; }
+  .hstep-text { min-width: 0; }
+  .hstep-title { font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Pestañas de sistemas: una sola fila que se desliza */
+  .system-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+  .sys-tab { white-space: nowrap; flex: none; }
+  .history-name { font-size: var(--fs-xl); }
+  .cuna-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .unit-search { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cuna { transition: none; }
+}
+
+.missing-toggle {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 8px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  text-align: left;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--navy);
+  cursor: pointer;
+}
+.missing-toggle:hover, .missing-toggle.is-on { background: var(--warn-bg); }
+
+/* Instrucción breve al inicio de cada paso de la historia */
+.step-lead {
+  margin: 0;
+  max-width: 68ch;
+  font-size: var(--fs-md);
+  color: var(--muted);
 }
