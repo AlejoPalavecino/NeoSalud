@@ -65,9 +65,9 @@ Base `main` · rama `maqueta-validacion` · un commit por corte, probado en el n
 - **Blocker:** none
 
 ### TASK-006 — Guion y guía de demo actualizados
-- **State:** IN_PROGRESS
+- **State:** DONE
 - **Depends on:** TASK-004, TASK-005
 - **Owner:** orchestrator
 - **Acceptance:** `docs/guia-uso-maqueta.md` y el guion de la maqueta recorren el flujo nuevo e incluyen, para cada pantalla, las preguntas que hay que hacerle al hospital.
-- **Evidence:** none
+- **Evidence:** 2026-11-24 · docs/guia-uso-maqueta.md reescrita: objetivo (4 preguntas), cómo abrir (Pages / servidor local), lectura de etiquetas «A confirmar», qué mostrar y qué preguntar en las 9 secciones, guion de 15 min y límites de la maqueta. Modal «Guion de la reunión» con 6 pasos y 5 preguntas destacadas. Afirmaciones de la guía comprobadas en navegador: Kaiser en Mateo Cabrera, CRIB II 14 en Alma Ríos, DBP calculada en Alma, sífilis congénita en Martina Álvarez (Penicilina 10 días), Chagas en Delfina Herrera con indicación de micrométodo en el borrador. docs/README.md con estado y próximos pasos actualizados.
 - **Blocker:** none

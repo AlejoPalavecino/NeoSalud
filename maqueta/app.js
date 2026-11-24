@@ -2201,14 +2201,20 @@
 
   function showGuideModal() {
     openModal(
-      "Guion de recorridos para presentar a la clínica",
-      `<ol style="padding-left:18px;margin:0;display:grid;gap:10px;font-size:13.5px">
-        <li><strong>Inicio y roles:</strong> mostrá la ocupación por sector, la bandeja de deuda clínica y cambiá el perfil arriba a la derecha a <em>Dirección · Solo consulta</em> o <em>Enfermería</em>.</li>
-        <li><strong>Alta rápida e Ingreso condicional:</strong> creá un paciente o abrí <em>Lucas Pereyra</em> (Ingreso incompleto), activá <em>Reanimación = Sí</em> o <em>Diabetes = Sí</em>, generá el borrador y modificá la temperatura para ver el <strong>aviso de desfasaje</strong>.</li>
-        <li><strong>Calculadoras automáticas:</strong> abrí <em>Mateo Cabrera (38+4)</em> para ver <strong>Kaiser 2024</strong> en vivo y <em>Alma Ríos (24+2)</em> para <strong>CRIB II</strong> y <strong>Fenton 2025</strong>.</li>
-        <li><strong>Líneas de tiempo:</strong> en <em>Alma Ríos → Hospitalización</em> agregá un cambio respiratorio y probá alternar <em>Cobertura de cronología</em>.</li>
-        <li><strong>Importación Excel / CSV segura:</strong> cargá el lote de ejemplo en <em>Importar</em> para mostrar el bloqueo por <strong>3 identificadores</strong> y la aprobación en bandeja humana.</li>
-        <li><strong>Estadísticas y Exportación:</strong> filtrá por peso &lt; 1.500 g, señalá la separación entre <em>Fuera de riesgo</em> y <em>Sin dato</em>, y recorré las 5 hojas del Excel Maestro.</li>
+      "Guion de la reunión con el servicio",
+      `<p class="field-hint" style="margin:0 0 12px">Objetivo: salir con respuestas a cuatro preguntas. ¿Falta alguna variable? ¿Sobra alguna? ¿El borrador se redactaría distinto? ¿Las tasas son las que informan a Jefatura?</p>
+      <ol class="guide-steps">
+        <li><strong>Inicio y perfiles (2 min).</strong> Censo, ocupación y deuda de registro. Cambiá a <em>Dirección</em> para mostrar la vista de solo lectura.
+          <span class="guide-ask">Preguntar: ¿los sectores y camas son los reales?</span></li>
+        <li><strong>Ficha de ingreso (4 min).</strong> Creá un paciente solo con el nombre. Abrí <em>Mateo Cabrera</em> (Kaiser) y <em>Alma Ríos</em> (CRIB II). Abrí y cerrá la rama de embarazo gemelar.
+          <span class="guide-ask">Preguntar: recorrer las etiquetas <span class="badge-confirm">A confirmar</span>, ¿cuáles registran hoy? ¿Cargan el SIP?</span></li>
+        <li><strong>Hospitalización y epicrisis (3 min).</strong> <em>Alma Ríos</em>: línea respiratoria y DBP calculada. <em>Martina Álvarez</em>: sífilis congénita. Generá la epicrisis y leé dos secciones.
+          <span class="guide-ask">Preguntar: ¿la redacción y el orden son los que usan?</span></li>
+        <li><strong>Importar (2 min).</strong> Pestaña <em>Documento</em>: procesá la nota de sala de partos y aceptá o rechazá campos.
+          <span class="guide-ask">Preguntar: ¿tienen planillas históricas o derivaciones en PDF / Word?</span></li>
+        <li><strong>Estadísticas y exportación (2 min).</strong> Tasas con denominador, filtro &lt; 1.500 g y las 7 hojas del Excel.
+          <span class="guide-ask">Preguntar: ¿son las tasas que informan? ¿Falta alguna?</span></li>
+        <li><strong>Cierre (2 min).</strong> Volvé a las cuatro preguntas y anotá las respuestas. El diccionario CSV (Exportación) sirve como planilla de relevamiento.</li>
       </ol>`
     );
   }

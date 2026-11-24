@@ -2,7 +2,7 @@
 
 Base documental de arquitectura, producto, UX/UI y decisiones técnicas para **NeoSalud**, el sistema de control clínico y gestión para Servicios de Neonatología / UCIN.
 
-> **Estado actual:** Fase de definición y documentación previa a la construcción de la **maqueta navegable** para validación con la clínica.  
+> **Estado actual:** maqueta navegable lista para validar con el servicio de un hospital de **Argentina** ([guía de uso](./guia-uso-maqueta.md) · [maqueta en línea](https://alejopalavecino.github.io/NeoSalud/)).  
 > **Alcance Fase 1:** Sistema web standalone 100% determinístico (**sin módulos de IA**), desplegable en VPS con base limpia e importación estructurada de Excel/CSV.
 
 ---
@@ -16,7 +16,7 @@ Base documental de arquitectura, producto, UX/UI y decisiones técnicas para **N
 | [03 · Diseño UX / UI](./03-diseno-ux-ui.md) | Sistema visual (evolución de `DocNeo-Demo`), tipografía, paleta, componentes, estados obligatorios, accesibilidad, responsive y guion de demo. | Listo para maquetado |
 | [04 · Arquitectura y Ambientes](./04-arquitectura-y-ambientes.md) | Arquitectura de despliegue en VPS con Docker, endurecimiento de seguridad, estrategia de 4 ambientes (`dev`, `test`, `preprod`, `prod`) y modelo de dominio. | Aprobado |
 | [05 · Stack Tecnológico](./05-stack-tecnologico.md) | Stack definitivo por capa (Next.js, TypeScript, PostgreSQL, Prisma), herramientas de archivos, testing e infraestructura. | Aprobado |
-| [Guía de Uso de la Maqueta](./guia-uso-maqueta.md) | Instrucciones paso a paso por cada una de las 9 secciones, roles, casos de prueba y guion de 10 minutos para presentar a la clínica. | Disponible |
+| [Guía de Uso de la Maqueta](./guia-uso-maqueta.md) | Qué mostrar y qué preguntarle al servicio en cada sección, cómo leer las etiquetas «A confirmar» y guion de 15 minutos para la reunión de validación. | Disponible |
 | [Registro de ADRs](./adr/README.md) | Decisiones arquitectónicas duraderas con alternativas, costos, riesgos y condiciones de revisión. | 3 aprobados |
 
 ---
@@ -41,7 +41,7 @@ Base documental de arquitectura, producto, UX/UI y decisiones técnicas para **N
 
 ## Próximo paso acordado
 
-1. Revisar y ajustar esta carpeta `docs/`.
-2. Construir la **maqueta navegable** (con los recorridos definidos en [02 · Secciones y Recorridos](./02-secciones-y-recorridos.md) y la estética de [03 · Diseño UX / UI](./03-diseno-ux-ui.md)) usando datos ficticios de demostración.
-3. Validar la maqueta y las 4 preguntas clínicas junto a la clínica/hospital.
-4. Cerrar `ADR-002` (backend TypeScript+Prisma vs. Python) e iniciar la implementación real por etapas.
+1. ~~Revisar y ajustar esta carpeta `docs/`.~~
+2. ~~Construir la maqueta navegable con datos ficticios.~~ Hecho: 30 pacientes ficticios, ficha completa para Argentina y variables marcadas «A confirmar».
+3. **Validar la maqueta con el servicio** siguiendo la [guía de uso](./guia-uso-maqueta.md): responder las 4 preguntas clínicas y marcar qué variables «A confirmar» quedan.
+4. Con esas respuestas, cerrar el diccionario de datos e iniciar la implementación real por etapas (stack aprobado en [ADR-002](./adr/ADR-002-backend-ts-prisma-vs-python.md)).
