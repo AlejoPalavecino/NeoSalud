@@ -1575,7 +1575,7 @@ table.clinical-table {
   }
 
   .grid-2, .grid-equal, .grid-3 {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1615,4 +1615,137 @@ table.clinical-table {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* ===== Ficha de ingreso declarativa: secciones colapsables y variables «A confirmar» ===== */
+.legend-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  margin: 0 0 16px;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.legend-row > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--teal);
+}
+
+.badge-confirm {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--warn-bg);
+  border: 1px dashed var(--warn-border);
+  color: var(--warn-ink);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+
+details.form-section > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+details.form-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.form-section > summary:hover {
+  background: var(--surface-subtle);
+}
+
+details.form-section > summary:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: -2px;
+}
+
+details.form-section:not([open]) > summary {
+  border-bottom: 0;
+}
+
+.section-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-chevron {
+  color: var(--muted);
+  transition: transform 0.18s ease;
+}
+
+details.form-section[open] .section-chevron {
+  transform: rotate(180deg);
+}
+
+details.form-section[open] > .panel-body {
+  animation: neo-section-in 0.18s ease-out;
+}
+
+@keyframes neo-section-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.nested-branch.branch-span {
+  grid-column: 1 / -1;
+  margin-top: 0;
+  animation: neo-section-in 0.2s ease-out;
+}
+
+.field.is-empty .input,
+.field.is-empty .select {
+  border-style: dashed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  details.form-section[open] > .panel-body,
+  .nested-branch.branch-span {
+    animation: none;
+  }
+  .section-chevron {
+    transition: none;
+  }
+}
+
+/* Subcampo de una rama condicional: aparece junto a su campo padre */
+.field.is-branch {
+  padding: 8px 10px 10px;
+  margin: -8px -10px -10px;
+  background: #f3fafa;
+  border-left: 3px solid var(--teal);
+  border-radius: var(--radius-sm);
+  animation: neo-section-in 0.2s ease-out;
+}
+
+.branch-mark {
+  color: var(--teal);
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .field.is-branch { animation: none; }
+}
+
+/* Los hijos de las grillas no se estiran por su contenido (p. ej. tablas anchas en móvil):
+   la tabla hace scroll dentro de .table-wrap en lugar de desbordar el panel. */
+.grid-2 > *, .grid-equal > *, .grid-3 > * {
+  min-width: 0;
 }

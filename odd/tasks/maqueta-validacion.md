@@ -33,15 +33,15 @@ Base `main` · rama `maqueta-validacion` · un commit por corte, probado en el n
 - **Blocker:** none
 
 ### TASK-002 — Ficha de ingreso con set completo argentino
-- **State:** IN_PROGRESS
+- **State:** DONE
 - **Depends on:** TASK-001
 - **Owner:** orchestrator
 - **Acceptance:** La ficha incluye identificación (DNI del RN con opción «en trámite», DNI materno, HC, cobertura), datos del parto, embarazo múltiple, serologías maternas (Chagas, VDRL, HIV, Toxoplasmosis, Hepatitis B, EGB), corticoides, MgSO₄, asfixia, sala de partos e incidencia local para Kaiser; los campos no núcleo muestran «A confirmar»; los bloques se pueden colapsar.
-- **Evidence:** none
+- **Evidence:** 2026-11-24 · Navegador (:5173). Ficha declarativa (maqueta/schema.js): 5 secciones colapsables, 59 campos visibles + ramas; identificación (DNI RN con «En trámite», DNI madre, HC, cobertura obra social/prepaga/sin cobertura + SUMAR), parto, múltiple, serologías (VDRL, HIV, Chagas, Toxo, HBsAg, EGB), corticoides, MgSO₄, asfixia, sala de partos; insignia «A confirmar» y contador por sección. Gemelar → corionicidad/orden/discordancia; volver a «No» descarta y audita; VDRL Reactiva → tratamiento, descartado y auditado al volver. Foco conservado tras cambiar un campo; colapso recordado; búsqueda «reanimacion» y «chagas» sin tildes. Kaiser muestra la incidencia local (0,5/1.000, A confirmar). Rol Dirección: 63 controles deshabilitados. 9 pacientes × 3 vistas sin errores. Móvil 375 px: 9 vistas sin desborde (corregido .grid-2 que se estiraba a 654 px).
 - **Blocker:** none
 
 ### TASK-003 — Hospitalización y egreso completos
-- **State:** PLANNED
+- **State:** IN_PROGRESS
 - **Depends on:** TASK-001
 - **Owner:** orchestrator
 - **Acceptance:** Se registran por separado sepsis precoz y tardía, peso mínimo, perforación intestinal, cirugía por NEC, cánula de bajo y alto flujo, y suplementos; el egreso incluye datos de fallecimiento, pesquisa neonatal y auditiva estructuradas, y vacunas BCG y Hepatitis B.

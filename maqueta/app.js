@@ -1,6 +1,7 @@
 (function () {
   const DATA = window.NEOSALUD_DATA;
   const ENG = window.NEOSALUD_ENGINE;
+  const SCHEMA = window.NEOSALUD_SCHEMA;
   const STORAGE_KEY = "neosalud.maqueta.v1";
 
   let state = loadState();
@@ -10,6 +11,7 @@
     hospTab: "respiratorio",
     patientFilters: { text: "", status: "all", sector: "all", gaGroup: "all" },
     ingresoVarFilter: "",
+    collapsedSections: {},
     dxSearch: "",
     statsFilters: { sector: "all", gaGroup: "all", weightGroup: "all" },
     importStep: 1,
@@ -613,6 +615,103 @@
     `;
   }
 
+  // ===================== FICHA DE INGRESO DECLARATIVA (schema.js) =====================
+  function sectionKeywords(sec) {
+    return [sec.title, sec.sub, ...sec.fields.map((f) => f.label)].join(" ");
+  }
+
+  function optionPairs(f) {
+    return (f.options || []).map((o) => (Array.isArray(o) ? o : [o, o]));
+  }
+
+  function fieldDisplayValue(f, v) {
+    const pair = optionPairs(f).find(([val]) => String(val) === String(v));
+    return pair ? pair[1] : String(v);
+  }
+
+  function fieldControlHtml(f, p, canEdit, parent) {
+    const v = SCHEMA.readField(p, f);
+    const id = `fx-${f.key}`;
+    const dataAttr = f.scope === "p" ? `data-pfield="${f.key}"` : `data-afield="${f.key}"`;
+    const dis = canEdit ? "" : "disabled";
+    let control;
+    if (f.type === "select") {
+      const opts = optionPairs(f);
+      // Un valor cargado que no está en la lista (dato importado o de otra versión) se muestra igual.
+      if (v !== "" && !opts.some(([val]) => String(val) === String(v))) opts.push([v, `${v} (valor cargado)`]);
+      control = `<select class="select" id="${id}" ${dataAttr} ${dis}>
+        <option value="">Sin responder</option>
+        ${opts.map(([val, lab]) => `<option value="${esc(val)}" ${String(val) === String(v) ? "selected" : ""}>${esc(lab)}</option>`).join("")}
+      </select>`;
+    } else {
+      const type = ["number", "date", "time"].includes(f.type) ? f.type : "text";
+      const attrs = [
+        f.min !== undefined ? `min="${f.min}"` : "",
+        f.max !== undefined ? `max="${f.max}"` : "",
+        f.step ? `step="${f.step}"` : ""
+      ].join(" ");
+      control = `<input class="input${f.type === "number" ? " num" : ""}${f.mono ? " mono" : ""}" id="${id}" type="${type}" ${dataAttr} value="${esc(v)}" placeholder="${esc(f.placeholder || "Sin responder")}" ${attrs} ${dis} />`;
+    }
+    const badge = f.core ? "" : ` <span class="badge-confirm" title="Variable propuesta: confirmar con el servicio si se registra">A confirmar</span>`;
+    const branch = parent
+      ? ` is-branch" title="Se muestra porque «${esc(parent.label)}» es «${esc(fieldDisplayValue(parent, SCHEMA.readField(p, parent)))}»`
+      : "";
+    const mark = parent ? `<span class="branch-mark" aria-hidden="true">↳</span>` : "";
+    return `<div class="field${v === "" ? " is-empty" : ""}${branch}"><label for="${id}">${mark}${esc(f.label)}${badge}</label>${control}</div>`;
+  }
+
+  function schemaSectionHtml(sec, p, canEdit, ctx) {
+    const visible = sec.fields.filter((f) => SCHEMA.conditionMet(p, f) && (f.onlyWhen !== "kaiser" || ctx.kaiserApplicable));
+    const inSection = new Set(sec.fields.map((f) => f.key));
+    const childrenOf = (key) => visible.filter((f) => f.showIf && f.showIf.key === key);
+    // Los subcampos de una rama se dibujan inmediatamente después de su campo padre,
+    // marcados como rama, para que la grilla no deje filas vacías.
+    const renderGroup = (list, parent) => list.map((f) => {
+      const kids = childrenOf(f.key);
+      return fieldControlHtml(f, p, canEdit, parent) + (kids.length ? renderGroup(kids, f) : "");
+    }).join("");
+    const roots = visible.filter((f) => !f.showIf || !inSection.has(f.showIf.key));
+    const filled = visible.filter((f) => SCHEMA.readField(p, f) !== "").length;
+    const toConfirm = visible.filter((f) => !f.core).length;
+    const open = ctx.forceOpen || !ui.collapsedSections[sec.id];
+    return `
+      <details class="panel form-section" data-section="${sec.id}" ${open ? "open" : ""}>
+        <summary class="panel-head">
+          <div>
+            <h2 class="panel-title">${esc(sec.title)}</h2>
+            <p class="panel-sub">${esc(sec.sub)}</p>
+          </div>
+          <div class="section-meta">
+            <span class="status-pill ${filled === visible.length ? "status-ok" : filled ? "status-warn" : "status-na"} num">${filled}/${visible.length} completos</span>
+            ${toConfirm ? `<span class="badge-confirm">${toConfirm} a confirmar</span>` : ""}
+            <svg class="section-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </div>
+        </summary>
+        <div class="panel-body">
+          <div class="form-grid">${renderGroup(roots)}</div>
+          ${ctx.after || ""}
+        </div>
+      </details>`;
+  }
+
+  function fentonStripHtml(fenton) {
+    return `
+      <div class="derived-strip" style="margin-top:16px" aria-live="polite">
+        <div class="derived-item">
+          <span class="derived-label">Fenton 2025 · Clasificación</span>
+          <span class="derived-val">${esc(fenton.classification)}</span>
+        </div>
+        <div class="derived-item">
+          <span class="derived-label">Peso · Z-score</span>
+          <span class="derived-val">${fenton.ready ? fenton.zScore : "—"}</span>
+        </div>
+        <div class="derived-item">
+          <span class="derived-label">Peso · Percentil</span>
+          <span class="derived-val">${fenton.ready ? `P ${fenton.percentile}` : "—"}</span>
+        </div>
+      </div>`;
+  }
+
   // ===================== VIEW 3: INGRESO =====================
   function viewIngreso() {
     const p = activePatient();
@@ -628,8 +727,10 @@
     const hasPlaceholders = (p.admissionDraft.text || "").includes("_____");
     const admSigned = !!p.admissionDraft.validated;
 
-    const vf = ui.ingresoVarFilter.trim().toLowerCase();
-    const showBlock = (keywords) => !vf || keywords.toLowerCase().includes(vf);
+    // Búsqueda sin distinguir mayúsculas ni tildes («reanimacion» encuentra «Reanimación»).
+    const fold = (t) => String(t).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    const vf = fold(ui.ingresoVarFilter.trim());
+    const showBlock = (keywords) => !vf || fold(keywords).includes(vf);
 
     const dxMatches = ui.dxSearch.trim().length > 0
       ? DATA.CIE10_CATALOG.filter((d) =>
@@ -645,312 +746,23 @@
           <p class="page-desc">Las subramas se muestran solo según la respuesta clínica. Si cerrás una rama, los subcampos ocultos se descartan sin dejar datos huérfanos.</p>
         </div>
         <div class="page-actions">
-          <input class="input" id="ingreso-var-filter" style="width:270px;max-width:100%" type="search" placeholder="Filtrar bloques (ej. reanimación, diabetes)" value="${esc(ui.ingresoVarFilter)}" />
+          <input class="input" id="ingreso-var-filter" style="width:270px;max-width:100%" type="search" placeholder="Buscar variable (ej. Chagas, reanimación, DNI)" value="${esc(ui.ingresoVarFilter)}" />
         </div>
       </div>
 
       ${!canEdit ? `<div class="banner banner-info">Tu perfil actual (${esc(r.roleLabel)}) es de solo consulta. Cambiá de perfil en la esquina superior derecha para editar o firmar.</div>` : ""}
 
-      ${showBlock("nacimiento identificacion antropometria fenton peso talla perimetro edad gestacional sexo temperatura") ? `
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">Nacimiento, antropometría y Fenton 2025</h2>
-            <p class="panel-sub">Cálculo automático en vivo de Z-score, percentil y clasificación PEG / AEG / GEG</p>
-          </div>
-        </div>
-        <div class="panel-body">
-          <div class="form-grid" style="margin-bottom:14px">
-            <div class="field">
-              <label for="in-gaW">EG semanas</label>
-              <input class="input num" id="in-gaW" type="number" min="22" max="43" data-pfield="gaWeeks" value="${esc(p.gaWeeks)}" ${dis} />
-            </div>
-            <div class="field">
-              <label for="in-gaD">EG días (0–6)</label>
-              <input class="input num" id="in-gaD" type="number" min="0" max="6" data-pfield="gaDays" value="${esc(p.gaDays)}" ${dis} />
-            </div>
-            <div class="field">
-              <label for="in-sex">Sexo</label>
-              <select class="select" id="in-sex" data-pfield="sex" ${dis}>
-                <option value="">Sin responder</option>
-                <option value="F" ${p.sex === "F" ? "selected" : ""}>Femenino</option>
-                <option value="M" ${p.sex === "M" ? "selected" : ""}>Masculino</option>
-                <option value="I" ${p.sex === "I" ? "selected" : ""}>Indeterminado</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="in-wt">Peso al nacer (g)</label>
-              <input class="input num" id="in-wt" type="number" min="300" max="6000" data-pfield="birthWeight" value="${esc(p.birthWeight)}" ${dis} />
-            </div>
-            <div class="field">
-              <label for="in-len">Talla (cm)</label>
-              <input class="input num" id="in-len" type="number" step="0.1" data-pfield="birthLength" value="${esc(p.birthLength)}" ${dis} />
-            </div>
-            <div class="field">
-              <label for="in-hc">Perímetro cefálico (cm)</label>
-              <input class="input num" id="in-hc" type="number" step="0.1" data-pfield="birthHc" value="${esc(p.birthHc)}" ${dis} />
-            </div>
-            <div class="field">
-              <label for="in-temp">Temperatura ingreso (°C)</label>
-              <input class="input num" id="in-temp" type="number" step="0.1" data-afield="tempC" value="${esc(a.tempC)}" ${dis} />
-            </div>
-            <div class="field">
-              <label for="in-be">Exceso de base inicial</label>
-              <input class="input num" id="in-be" type="number" step="0.1" data-afield="baseExcess" value="${esc(a.baseExcess)}" ${dis} />
-            </div>
-          </div>
+      <div class="legend-row" role="note">
+        <span><span class="legend-dot is-core" aria-hidden="true"></span>Variable núcleo</span>
+        <span><span class="badge-confirm">A confirmar</span> Variable propuesta: preguntar al servicio si la registra hoy</span>
+        <span class="field-hint">Los campos vacíos quedan como «Sin responder». Nada se completa por defecto.</span>
+      </div>
 
-          <div class="derived-strip" aria-live="polite">
-            <div class="derived-item">
-              <span class="derived-label">Fenton 2025 · Clasificación</span>
-              <span class="derived-val">${esc(fenton.classification)}</span>
-            </div>
-            <div class="derived-item">
-              <span class="derived-label">Peso · Z-score</span>
-              <span class="derived-val">${fenton.ready ? fenton.zScore : "—"}</span>
-            </div>
-            <div class="derived-item">
-              <span class="derived-label">Peso · Percentil</span>
-              <span class="derived-val">${fenton.ready ? `P ${fenton.percentile}` : "—"}</span>
-            </div>
-            <div class="derived-item">
-              <span class="derived-label">Procedencia</span>
-              <span class="derived-val">${esc(a.origin || "Sin responder")}</span>
-            </div>
-          </div>
-        </div>
-      </section>
-      ` : ""}
-
-      ${showBlock("materno obstetrico paridad diabetes rpo rotura membranas corioamnionitis corticoides mgso4 egb") ? `
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">Antecedentes maternos y obstétricos (lógica condicional)</h2>
-            <p class="panel-sub">Cambiá Paridad, Diabetes o RPO para ver la apertura y limpieza automática de subramas</p>
-          </div>
-        </div>
-        <div class="panel-body">
-          <div class="form-grid">
-            <div class="field">
-              <label for="in-mage">Edad materna (años)</label>
-              <input class="input num" id="in-mage" type="number" data-afield="maternalAge" value="${esc(a.maternalAge)}" placeholder="Sin responder" ${dis} />
-            </div>
-            <div class="field">
-              <label for="in-par">Paridad</label>
-              <select class="select" id="in-par" data-afield="parity" ${dis}>
-                <option value="">Sin responder</option>
-                <option value="Primípara" ${a.parity === "Primípara" ? "selected" : ""}>Primípara</option>
-                <option value="Multipara" ${a.parity === "Multipara" ? "selected" : ""}>Multípara</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="in-ster">Corticoides antenatales</label>
-              <select class="select" id="in-ster" data-afield="antenatalSteroids" ${dis}>
-                <option value="">Sin responder</option>
-                <option value="Completo (2 dosis betametasona)" ${a.antenatalSteroids === "Completo (2 dosis betametasona)" ? "selected" : ""}>Completo (2 dosis)</option>
-                <option value="Incompleto (1 dosis)" ${a.antenatalSteroids === "Incompleto (1 dosis)" ? "selected" : ""}>Incompleto (1 dosis)</option>
-                <option value="No" ${a.antenatalSteroids === "No" ? "selected" : ""}>No recibió</option>
-                <option value="No aplica" ${a.antenatalSteroids === "No aplica" ? "selected" : ""}>No aplica (término)</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="in-diab">Diabetes materna</label>
-              <select class="select" id="in-diab" data-afield="diabetes" ${dis}>
-                <option value="">Sin responder</option>
-                <option value="No" ${a.diabetes === "No" ? "selected" : ""}>No</option>
-                <option value="Sí" ${a.diabetes === "Sí" ? "selected" : ""}>Sí</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="in-rpo">Rotura prematura de membranas (RPO)</label>
-              <select class="select" id="in-rpo" data-afield="rpo" ${dis}>
-                <option value="">Sin responder</option>
-                <option value="No" ${a.rpo === "No" ? "selected" : ""}>No</option>
-                <option value="Sí" ${a.rpo === "Sí" ? "selected" : ""}>Sí</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="in-gbs">Estreptococo grupo B (EGB)</label>
-              <select class="select" id="in-gbs" data-afield="gbs" ${dis}>
-                <option value="">Sin responder</option>
-                <option value="Negativo" ${a.gbs === "Negativo" ? "selected" : ""}>Negativo</option>
-                <option value="Positivo" ${a.gbs === "Positivo" ? "selected" : ""}>Positivo</option>
-                <option value="Desconocido" ${a.gbs === "Desconocido" ? "selected" : ""}>Desconocido</option>
-              </select>
-            </div>
-          </div>
-
-          ${a.parity === "Multipara" ? `
-            <div class="nested-branch">
-              <h3 class="nested-title">Detalle de paridad (rama activa por Multípara)</h3>
-              <div class="form-grid">
-                <div class="field">
-                  <label for="in-pardet">Fórmula obstétrica</label>
-                  <input class="input" id="in-pardet" data-afield="parityDetail" value="${esc(a.parityDetail)}" placeholder="Ej. G3 P2" ${dis} />
-                </div>
-              </div>
-            </div>
-          ` : ""}
-
-          ${a.diabetes === "Sí" ? `
-            <div class="nested-branch">
-              <h3 class="nested-title">Detalle de diabetes materna</h3>
-              <div class="form-grid">
-                <div class="field">
-                  <label for="in-dtype">Tipo</label>
-                  <select class="select" id="in-dtype" data-afield="diabetesType" ${dis}>
-                    <option value="">Sin responder</option>
-                    <option value="Gestacional" ${a.diabetesType === "Gestacional" ? "selected" : ""}>Gestacional</option>
-                    <option value="Pre-gestacional tipo 1" ${a.diabetesType === "Pre-gestacional tipo 1" ? "selected" : ""}>Pre-gestacional tipo 1</option>
-                    <option value="Pre-gestacional tipo 2" ${a.diabetesType === "Pre-gestacional tipo 2" ? "selected" : ""}>Pre-gestacional tipo 2</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="in-dtx">Tratamiento</label>
-                  <select class="select" id="in-dtx" data-afield="diabetesTx" ${dis}>
-                    <option value="">Sin responder</option>
-                    <option value="Dieta" ${a.diabetesTx === "Dieta" ? "selected" : ""}>Dieta</option>
-                    <option value="Insulina" ${a.diabetesTx === "Insulina" ? "selected" : ""}>Insulina</option>
-                    <option value="Metformina" ${a.diabetesTx === "Metformina" ? "selected" : ""}>Metformina</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="in-hba1c">HbA1c</label>
-                  <input class="input num" id="in-hba1c" data-afield="hba1c" value="${esc(a.hba1c)}" placeholder="Ej. 6.2%" ${dis} />
-                </div>
-              </div>
-            </div>
-          ` : ""}
-
-          ${a.rpo === "Sí" ? `
-            <div class="nested-branch">
-              <h3 class="nested-title">Detalle de RPO e infección ovular</h3>
-              <div class="form-grid">
-                <div class="field">
-                  <label for="in-rpoh">Duración RPO (horas)</label>
-                  <input class="input num" id="in-rpoh" type="number" data-afield="rpoHours" value="${esc(a.rpoHours)}" ${dis} />
-                </div>
-                <div class="field">
-                  <label for="in-chor">Corioamnionitis</label>
-                  <select class="select" id="in-chor" data-afield="chorio" ${dis}>
-                    <option value="">Sin responder</option>
-                    <option value="No" ${a.chorio === "No" ? "selected" : ""}>No</option>
-                    <option value="Sospecha clínica" ${a.chorio === "Sospecha clínica" ? "selected" : ""}>Sospecha clínica</option>
-                    <option value="Sí" ${a.chorio === "Sí" ? "selected" : ""}>Confirmada</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="in-mtemp">Temperatura materna máx (°C)</label>
-                  <input class="input num" id="in-mtemp" type="number" step="0.1" data-afield="maternalMaxTemp" value="${esc(a.maternalMaxTemp)}" ${dis} />
-                </div>
-                <div class="field">
-                  <label for="in-mabx">Antibióticos intraparto</label>
-                  <select class="select" id="in-mabx" data-afield="maternalAbx" ${dis}>
-                    <option value="">Sin responder</option>
-                    <option value="No requerido" ${a.maternalAbx === "No requerido" ? "selected" : ""}>No requerido</option>
-                    <option value="Sin antibióticos / < 2 h" ${a.maternalAbx === "Sin antibióticos / < 2 h" ? "selected" : ""}>Sin antibióticos / &lt; 2 h</option>
-                    <option value="Ampicilina >= 4 h" ${a.maternalAbx === "Ampicilina >= 4 h" ? "selected" : ""}>Ampicilina ≥ 4 h</option>
-                    <option value="Penicilina >= 4 h" ${a.maternalAbx === "Penicilina >= 4 h" ? "selected" : ""}>Penicilina ≥ 4 h</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          ` : ""}
-        </div>
-      </section>
-      ` : ""}
-
-      ${showBlock("transicion apgar reanimacion vppi intubacion masaje adrenalina crib kaiser sepsis") ? `
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">Transición, reanimación y calculadoras automáticas</h2>
-            <p class="panel-sub">CRIB II se activa en ≤ 32 sem o ≤ 1.500 g · Kaiser 2024 se activa en ≥ 35 sem</p>
-          </div>
-        </div>
-        <div class="panel-body">
-          <div class="form-grid">
-            <div class="field">
-              <label for="in-ap1">Apgar 1 min</label>
-              <input class="input num" id="in-ap1" type="number" min="0" max="10" data-afield="apgar1" value="${esc(a.apgar1)}" ${dis} />
-            </div>
-            <div class="field">
-              <label for="in-ap5">Apgar 5 min</label>
-              <input class="input num" id="in-ap5" type="number" min="0" max="10" data-afield="apgar5" value="${esc(a.apgar5)}" ${dis} />
-            </div>
-            <div class="field">
-              <label for="in-res">¿Requirió reanimación?</label>
-              <select class="select" id="in-res" data-afield="resuscitation" ${dis}>
-                <option value="">Sin responder</option>
-                <option value="No" ${a.resuscitation === "No" ? "selected" : ""}>No</option>
-                <option value="Sí" ${a.resuscitation === "Sí" ? "selected" : ""}>Sí</option>
-              </select>
-            </div>
-            ${kaiser.applicable ? `
-            <div class="field">
-              <label for="in-exam">Estado clínico (Kaiser 2024)</label>
-              <select class="select" id="in-exam" data-afield="examStatus" ${dis}>
-                <option value="">Sin responder</option>
-                <option value="Buen aspecto" ${a.examStatus === "Buen aspecto" ? "selected" : ""}>Buen aspecto</option>
-                <option value="Equívoco" ${a.examStatus === "Equívoco" ? "selected" : ""}>Equívoco</option>
-                <option value="Enfermedad clínica" ${a.examStatus === "Enfermedad clínica" ? "selected" : ""}>Enfermedad clínica</option>
-              </select>
-            </div>
-            ` : ""}
-          </div>
-
-          ${a.resuscitation === "Sí" ? `
-            <div class="nested-branch">
-              <h3 class="nested-title">Detalle de maniobras de reanimación</h3>
-              <div class="form-grid">
-                <div class="field">
-                  <label for="in-vppi">VPPI</label>
-                  <select class="select" id="in-vppi" data-afield="vppi" ${dis}>
-                    <option value="">Sin responder</option>
-                    <option value="Sí" ${a.vppi === "Sí" ? "selected" : ""}>Sí</option>
-                    <option value="No" ${a.vppi === "No" ? "selected" : ""}>No</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="in-intub">Intubación endotraqueal</label>
-                  <select class="select" id="in-intub" data-afield="intubation" ${dis}>
-                    <option value="">Sin responder</option>
-                    <option value="Sí" ${a.intubation === "Sí" ? "selected" : ""}>Sí</option>
-                    <option value="No" ${a.intubation === "No" ? "selected" : ""}>No</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="in-mas">Masaje cardíaco</label>
-                  <select class="select" id="in-mas" data-afield="chestCompressions" ${dis}>
-                    <option value="">Sin responder</option>
-                    <option value="Sí" ${a.chestCompressions === "Sí" ? "selected" : ""}>Sí</option>
-                    <option value="No" ${a.chestCompressions === "No" ? "selected" : ""}>No</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="in-o2m">O2 máximo sala de partos (%)</label>
-                  <input class="input num" id="in-o2m" type="number" min="21" max="100" data-afield="maxO2Delivery" value="${esc(a.maxO2Delivery)}" ${dis} />
-                </div>
-                <div class="field">
-                  <label for="in-adr">Adrenalina</label>
-                  <select class="select" id="in-adr" data-afield="adrenaline" ${dis}>
-                    <option value="">Sin responder</option>
-                    <option value="No" ${a.adrenaline === "No" ? "selected" : ""}>No</option>
-                    <option value="Sí" ${a.adrenaline === "Sí" ? "selected" : ""}>Sí</option>
-                  </select>
-                </div>
-                ${a.adrenaline === "Sí" ? `
-                <div class="field">
-                  <label for="in-adrd">Número de dosis</label>
-                  <input class="input num" id="in-adrd" type="number" min="1" max="10" data-afield="adrenalineDoses" value="${esc(a.adrenalineDoses)}" ${dis} />
-                </div>
-                ` : ""}
-              </div>
-            </div>
-          ` : ""}
-
-          <div style="display:grid;gap:12px;margin-top:14px">
+      ${SCHEMA.ADMISSION_SECTIONS.filter((sec) => showBlock(sectionKeywords(sec))).map((sec) => schemaSectionHtml(sec, p, canEdit, {
+        kaiserApplicable: kaiser.applicable,
+        forceOpen: !!vf,
+        after: sec.after === "fenton" ? fentonStripHtml(fenton) : sec.after === "calculators" ? `
+          <div style="display:grid;gap:12px;margin-top:16px">
             ${crib.applicable ? (crib.ready ? `
               <div class="calc-box ${crib.score >= 12 ? "is-danger" : crib.score >= 8 ? "is-warn" : ""}" aria-live="polite">
                 <div class="calc-header">
@@ -976,6 +788,7 @@
                   <span class="status-pill ${kaiser.severity === "danger" ? "status-danger" : kaiser.severity === "warn" ? "status-warn" : "status-ok"} num">Riesgo basal ${kaiser.riskBirth}/1000 · Posterior ${kaiser.posterior}/1000</span>
                 </div>
                 <div style="font-size:13px;color:var(--navy);font-weight:500">Recomendación: ${esc(kaiser.recommendation)}</div>
+                <div class="field-hint" style="margin-top:4px">Incidencia local usada: ${String(kaiser.incidence).replace(".", ",")} / 1.000 nacidos vivos (parámetro institucional) <span class="badge-confirm">A confirmar</span></div>
               </div>
             ` : `
               <div class="calc-box" aria-live="polite">
@@ -986,10 +799,8 @@
                 <div class="field-hint">Falta: ${kaiser.missing.map(esc).join(", ")}. No se asume ningún valor por defecto.</div>
               </div>
             `) : ""}
-          </div>
-        </div>
-      </section>
-      ` : ""}
+          </div>` : ""
+      })).join("")}
 
       ${showBlock("diagnosticos cie10 catalogo ingreso") ? `
       <section class="panel">
@@ -2032,6 +1843,7 @@
 
   // ===================== MAIN RENDER =====================
   function render() {
+    ENG.setInstitution({ eosIncidence: state.eosIncidence });
     renderNav();
     renderTopbar();
     renderPatientStrip();
@@ -2128,20 +1940,6 @@
        <button class="btn btn-primary" type="button" onclick="window.print()">Imprimir / Guardar PDF</button>`
     );
   }
-
-  // Ramas condicionales de la ficha de ingreso: qué respuesta abre la rama y qué subcampos contiene.
-  const CONDITIONAL_BRANCHES = {
-    parity: { label: "Multípara", openWhen: "Multipara", fields: ["parityDetail"] },
-    diabetes: { label: "Diabetes materna", openWhen: "Sí", fields: ["diabetesType", "diabetesTx", "hba1c"] },
-    rpo: { label: "Rotura prematura de membranas", openWhen: "Sí", fields: ["rpoHours", "chorio"] },
-    resuscitation: { label: "Reanimación", openWhen: "Sí", fields: ["vppi", "intubation", "chestCompressions", "maxO2Delivery", "adrenaline", "adrenalineDoses"] },
-    adrenaline: { label: "Adrenalina", openWhen: "Sí", fields: ["adrenalineDoses"] }
-  };
-  const BRANCH_FIELD_LABELS = {
-    parityDetail: "Detalle de paridad", diabetesType: "Tipo de diabetes", diabetesTx: "Tratamiento de diabetes", hba1c: "HbA1c",
-    rpoHours: "Horas de bolsa rota", chorio: "Corioamnionitis", vppi: "VPPI", intubation: "Intubación",
-    chestCompressions: "Masaje cardíaco", maxO2Delivery: "O2 máximo en sala de partos", adrenaline: "Adrenalina", adrenalineDoses: "Dosis de adrenalina"
-  };
 
   // ===================== DOCUMENTOS FIRMADOS: ENMIENDAS Y REGENERACIÓN =====================
   const DRAFT_KINDS = {
@@ -2316,27 +2114,37 @@
         if (pf) {
           p[pf] = val;
         } else if (af) {
-          // Cero datos huérfanos: al cerrar una rama condicional se descartan TODOS sus subcampos
-          // con valor, y el descarte queda en la bitácora de auditoría.
-          const branch = CONDITIONAL_BRANCHES[af];
-          if (branch && val !== branch.openWhen) {
-            const discarded = branch.fields.filter((k) => p.admission[k] !== "" && p.admission[k] !== null && p.admission[k] !== undefined);
-            if (discarded.length) {
-              const detail = discarded.map((k) => `${BRANCH_FIELD_LABELS[k] || k}: ${p.admission[k]}`).join(", ");
-              discarded.forEach((k) => { p.admission[k] = ""; });
-              logAudit(`Descarte de rama «${branch.label}»`, `${p.id} (${p.fullName})`, `Respuesta cambiada a «${val || "Sin responder"}» · Subcampos descartados: ${detail}`);
-              toast(`Rama «${branch.label}» cerrada: ${discarded.length} subcampo(s) descartado(s) y registrado(s) en auditoría.`);
-            }
-          }
           p.admission[af] = val;
         } else if (df) {
           p.discharge[df] = val;
           if (df === "date") p.dischargeDate = val;
         }
 
+        // Cero datos huérfanos: si la respuesta cerró una rama condicional, se descartan
+        // todos sus subcampos con valor y el descarte queda en la bitácora de auditoría.
+        if (pf || af) {
+          const discarded = SCHEMA.discardClosedBranches(p);
+          if (discarded.length) {
+            const parent = SCHEMA.FIELD_BY_KEY[pf || af];
+            const branchName = parent ? parent.label : (pf || af);
+            const detail = discarded.map((d) => `${d.label}: ${d.value}`).join(", ");
+            logAudit(`Descarte de rama «${branchName}»`, `${p.id} (${p.fullName})`, `Respuesta cambiada a «${val === "" ? "Sin responder" : val}» · Subcampos descartados: ${detail}`);
+            toast(`Rama «${branchName}» cerrada: ${discarded.length} subcampo(s) descartado(s) y registrado(s) en auditoría.`);
+          }
+        }
+
+        const focusId = el.id;
         saveState();
         render();
+        // Al re-renderizar se conserva el foco en el mismo campo (navegación con teclado).
+        const again = focusId && document.getElementById(focusId);
+        if (again) again.focus();
       };
+    });
+
+    // Secciones colapsables de la ficha: se recuerda cuáles cerró el usuario.
+    main.querySelectorAll("details.form-section").forEach((d) => {
+      d.addEventListener("toggle", () => { ui.collapsedSections[d.dataset.section] = !d.open; });
     });
 
     // CIE-10 search

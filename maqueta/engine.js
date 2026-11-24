@@ -1,6 +1,13 @@
 (function (global) {
   const REF_DATE = "2026-11-22";
 
+  // Parámetros institucionales que usan las calculadoras. La incidencia local de sepsis
+  // precoz (por 1.000 nacidos vivos) es un dato del hospital: se configura en Administración.
+  const institution = { eosIncidence: 0.5 };
+  function setInstitution(params) {
+    Object.assign(institution, params || {});
+  }
+
   // Un valor vacío es «sin dato», nunca 0. Number("") devolvería 0 y haría pasar
   // a un paciente sin EG como prematuro extremo.
   function num(v) {
@@ -144,7 +151,8 @@
     if (!examStatus) missing.push("estado clínico del recién nacido");
     if (missing.length) return { applicable: true, ready: false, missing };
 
-    let baseRisk = 0.42;
+    // Riesgo de base ajustado por la incidencia local (referencia 0,5 / 1.000).
+    let baseRisk = 0.42 * ((num(institution.eosIncidence) || 0.5) / 0.5);
     if (temp >= 38.5) baseRisk *= 3.8;
     else if (temp >= 38.0) baseRisk *= 2.4;
     else if (temp >= 37.5) baseRisk *= 1.4;
@@ -173,7 +181,7 @@
       recommendation = "Hemocultivo y observación clínica estrecha (control de signos vitales cada 4 h por 24 h).";
       severity = "warn";
     }
-    return { applicable: true, ready: true, riskBirth, posterior, recommendation, severity };
+    return { applicable: true, ready: true, riskBirth, posterior, recommendation, severity, incidence: num(institution.eosIncidence) || 0.5 };
   }
 
   function diffDays(startIso, endIso) {
@@ -765,6 +773,7 @@
 
   global.NEOSALUD_ENGINE = {
     REF_DATE,
+    setInstitution,
     num,
     fmtDate,
     fmtGa,

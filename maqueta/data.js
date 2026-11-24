@@ -1013,6 +1013,7 @@
       activeRoleId: "planta",
       institutionName: "Clínica Materno-Infantil · Servicio de Neonatología",
       sessionTimeoutMin: 25,
+      eosIncidence: 0.5,
       patients,
       sampleImportBatches,
       auditLog
