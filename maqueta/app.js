@@ -57,7 +57,7 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && parsed.version === 1 && Array.isArray(parsed.patients)) {
+        if (parsed && parsed.version === DATA.STATE_VERSION && Array.isArray(parsed.patients)) {
           return parsed;
         }
       }
@@ -263,13 +263,13 @@
       <div class="patient-strip-inner">
         <div class="patient-id-block">
           <select class="select" style="width:auto;min-width:210px;font-weight:600" id="patient-switcher" aria-label="Cambiar paciente activo">
-            ${state.patients.map((pt) => `<option value="${esc(pt.id)}" ${pt.id === p.id ? "selected" : ""}>${esc(pt.fullName)} (${esc(pt.id)} · ${pt.gaWeeks}+${pt.gaDays})</option>`).join("")}
+            ${state.patients.map((pt) => `<option value="${esc(pt.id)}" ${pt.id === p.id ? "selected" : ""}>${esc(pt.fullName)} (${esc(pt.id)} · ${esc(ENG.fmtGa(pt.gaWeeks, pt.gaDays, "EG s/d"))})</option>`).join("")}
           </select>
           ${statusBadge(p.status)}
           <div class="patient-telemetry">
             <span class="telemetry-item"><span>HC</span><strong class="mono">${esc(p.hc)}</strong></span>
-            <span class="telemetry-item"><span>EG</span><strong class="num">${p.gaWeeks}+${p.gaDays} sem</strong></span>
-            <span class="telemetry-item"><span>Peso nac.</span><strong class="num">${p.birthWeight} g</strong></span>
+            <span class="telemetry-item"><span>EG</span><strong class="num">${ENG.num(p.gaWeeks) === null ? "Sin responder" : esc(ENG.fmtGa(p.gaWeeks, p.gaDays)) + " sem"}</strong></span>
+            <span class="telemetry-item"><span>Peso nac.</span><strong class="num">${esc(ENG.fmtWeight(p.birthWeight))}</strong></span>
             <span class="telemetry-item"><span>Estadía</span><strong class="num">${stay} d</strong></span>
             <span class="telemetry-item"><span>Sector</span><strong>${esc(p.sector)}</strong></span>
           </div>
@@ -299,7 +299,7 @@
         alerts.push({
           severity: "warn",
           title: `${p.fullName} (${p.id}) · Ingreso sin validar`,
-          detail: `Sector ${p.sector}, ${p.gaWeeks}+${p.gaDays} sem, ${p.birthWeight} g. Falta generar y firmar borrador de ingreso.`,
+          detail: `Sector ${p.sector || "sin asignar"} · EG ${ENG.fmtGa(p.gaWeeks, p.gaDays)} · Peso ${ENG.fmtWeight(p.birthWeight)}. Falta generar y firmar borrador de ingreso.`,
           actionLabel: "Completar ingreso",
           route: "ingreso",
           patientId: p.id
@@ -316,7 +316,7 @@
           patientId: p.id
         });
       }
-      if (p.status === "hospitalizado" && p.gaWeeks < 32 && p.hosp.respCoverage !== "completa") {
+      if (p.status === "hospitalizado" && ENG.num(p.gaWeeks) !== null && ENG.num(p.gaWeeks) < 32 && p.hosp.respCoverage !== "completa") {
         alerts.push({
           severity: "warn",
           title: `${p.fullName} · Cronología respiratoria abierta`,
@@ -335,7 +335,7 @@
       <div class="page-header">
         <div>
           <h1 class="page-title">Censo de la Unidad de Neonatología</h1>
-          <p class="page-desc">${esc(state.institutionName)} — Corte clínico al ${ENG.REF_DATE}. Cada dato registrado deriva borradores, líneas de tiempo y tasas sin doble carga.</p>
+          <p class="page-desc">${esc(state.institutionName)} — Corte clínico al ${ENG.fmtDate(ENG.REF_DATE)}. Cada dato registrado deriva borradores, líneas de tiempo y tasas sin doble carga.</p>
         </div>
         <div class="page-actions">
           ${r.permissions.createPatient ? `<button class="btn btn-primary" type="button" id="btn-new-patient">Crear paciente</button>` : ""}
@@ -422,8 +422,8 @@
                           <button class="row-link" type="button" data-open-patient="${esc(p.id)}" data-target-route="${p.status === "ingreso_incompleto" ? "ingreso" : "hosp"}">${esc(p.fullName)}</button>
                           <div class="field-hint mono">${esc(p.id)} · ${esc(p.hc)}</div>
                         </td>
-                        <td class="num">${p.gaWeeks}+${p.gaDays}</td>
-                        <td class="num">${p.birthWeight} g</td>
+                        <td class="num">${esc(ENG.fmtGa(p.gaWeeks, p.gaDays, "—"))}</td>
+                        <td class="num">${esc(ENG.fmtWeight(p.birthWeight, "—"))}</td>
                         <td>${esc(p.sector)}</td>
                         <td>${statusBadge(p.status)}</td>
                         <td>
@@ -477,7 +477,7 @@
                   <li class="queue-item">
                     <div>
                       <div class="queue-title">${esc(a.action)} — ${esc(a.target)}</div>
-                      <div class="queue-detail">${esc(a.user)} (${esc(a.role)}) · <span class="mono">${esc(a.ts)}</span></div>
+                      <div class="queue-detail">${esc(a.user)} (${esc(a.role)}) · <span class="mono">${esc(ENG.fmtDate(a.ts))}</span></div>
                     </div>
                   </li>
                 `).join("")}
@@ -583,9 +583,9 @@
                           <button class="row-link" type="button" data-open-patient="${esc(p.id)}" data-target-route="ingreso">${esc(p.fullName)}</button>
                           <div class="field-hint">Madre: ${esc(p.motherName || "Sin consignar")}</div>
                         </td>
-                        <td class="num">${esc(p.birthDate)}</td>
-                        <td class="num">${p.gaWeeks}+${p.gaDays}</td>
-                        <td class="num">${p.birthWeight} g</td>
+                        <td class="num">${esc(ENG.fmtDate(p.birthDate) || "—")}</td>
+                        <td class="num">${esc(ENG.fmtGa(p.gaWeeks, p.gaDays, "—"))}</td>
+                        <td class="num">${esc(ENG.fmtWeight(p.birthWeight, "—"))}</td>
                         <td class="num">${fen.ready ? `${esc(fen.classification.split(" ")[0])} (P${fen.percentile})` : "—"}</td>
                         <td>${esc(p.sector)}</td>
                         <td>${statusBadge(p.status)}</td>
@@ -623,7 +623,7 @@
     const a = p.admission;
     const fenton = ENG.calcFenton2025(p.gaWeeks, p.gaDays, p.sex, p.birthWeight);
     const crib = ENG.calcCrib2(p.gaWeeks, p.birthWeight, p.sex, a.tempC, a.baseExcess);
-    const kaiser = ENG.calcKaiser2024(p.gaWeeks, p.gaDays, a.maternalMaxTemp, a.rpoHours, a.gbs, a.maternalAbx, a.examStatus);
+    const kaiser = ENG.calcKaiserFor(p);
     const diffs = ENG.computeDraftDiff(p, "admission");
     const hasPlaceholders = (p.admissionDraft.text || "").includes("_____");
     const admSigned = !!p.admissionDraft.validated;
@@ -672,6 +672,7 @@
             <div class="field">
               <label for="in-sex">Sexo</label>
               <select class="select" id="in-sex" data-pfield="sex" ${dis}>
+                <option value="">Sin responder</option>
                 <option value="F" ${p.sex === "F" ? "selected" : ""}>Femenino</option>
                 <option value="M" ${p.sex === "M" ? "selected" : ""}>Masculino</option>
                 <option value="I" ${p.sex === "I" ? "selected" : ""}>Indeterminado</option>
@@ -772,6 +773,7 @@
             <div class="field">
               <label for="in-gbs">Estreptococo grupo B (EGB)</label>
               <select class="select" id="in-gbs" data-afield="gbs" ${dis}>
+                <option value="">Sin responder</option>
                 <option value="Negativo" ${a.gbs === "Negativo" ? "selected" : ""}>Negativo</option>
                 <option value="Positivo" ${a.gbs === "Positivo" ? "selected" : ""}>Positivo</option>
                 <option value="Desconocido" ${a.gbs === "Desconocido" ? "selected" : ""}>Desconocido</option>
@@ -845,6 +847,7 @@
                 <div class="field">
                   <label for="in-mabx">Antibióticos intraparto</label>
                   <select class="select" id="in-mabx" data-afield="maternalAbx" ${dis}>
+                    <option value="">Sin responder</option>
                     <option value="No requerido" ${a.maternalAbx === "No requerido" ? "selected" : ""}>No requerido</option>
                     <option value="Sin antibióticos / < 2 h" ${a.maternalAbx === "Sin antibióticos / < 2 h" ? "selected" : ""}>Sin antibióticos / &lt; 2 h</option>
                     <option value="Ampicilina >= 4 h" ${a.maternalAbx === "Ampicilina >= 4 h" ? "selected" : ""}>Ampicilina ≥ 4 h</option>
@@ -888,6 +891,7 @@
             <div class="field">
               <label for="in-exam">Estado clínico (Kaiser 2024)</label>
               <select class="select" id="in-exam" data-afield="examStatus" ${dis}>
+                <option value="">Sin responder</option>
                 <option value="Buen aspecto" ${a.examStatus === "Buen aspecto" ? "selected" : ""}>Buen aspecto</option>
                 <option value="Equívoco" ${a.examStatus === "Equívoco" ? "selected" : ""}>Equívoco</option>
                 <option value="Enfermedad clínica" ${a.examStatus === "Enfermedad clínica" ? "selected" : ""}>Enfermedad clínica</option>
@@ -947,17 +951,25 @@
           ` : ""}
 
           <div style="display:grid;gap:12px;margin-top:14px">
-            ${crib.applicable ? `
+            ${crib.applicable ? (crib.ready ? `
               <div class="calc-box ${crib.score >= 12 ? "is-danger" : crib.score >= 8 ? "is-warn" : ""}" aria-live="polite">
                 <div class="calc-header">
                   <strong>Score CRIB II (activado automáticamente por ≤ 32 sem o ≤ 1.500 g)</strong>
                   <span class="status-pill ${crib.score >= 12 ? "status-danger" : "status-hosp"} num">Puntaje: ${crib.score} · ${esc(crib.level)}</span>
                 </div>
-                <div class="field-hint">Calculado con sexo, edad gestacional (${p.gaWeeks} sem), peso (${p.birthWeight} g), temperatura de ingreso (${a.tempC || "—"} °C) y exceso de base (${a.baseExcess || "—"}).</div>
+                <div class="field-hint">Calculado con sexo, edad gestacional (${esc(ENG.fmtGa(p.gaWeeks, p.gaDays))} sem), peso (${esc(ENG.fmtWeight(p.birthWeight))}), temperatura de ingreso (${esc(a.tempC)} °C) y exceso de base (${esc(a.baseExcess)}).</div>
               </div>
-            ` : ""}
+            ` : `
+              <div class="calc-box" aria-live="polite">
+                <div class="calc-header">
+                  <strong>Score CRIB II (activado automáticamente por ≤ 32 sem o ≤ 1.500 g)</strong>
+                  <span class="status-pill status-warn">No calculable</span>
+                </div>
+                <div class="field-hint">Falta: ${crib.missing.map(esc).join(", ")}. El puntaje no se estima con datos incompletos.</div>
+              </div>
+            `) : ""}
 
-            ${kaiser.applicable ? `
+            ${kaiser.applicable ? (kaiser.ready ? `
               <div class="calc-box ${kaiser.severity === "danger" ? "is-danger" : kaiser.severity === "warn" ? "is-warn" : ""}" aria-live="polite">
                 <div class="calc-header">
                   <strong>Calculadora Kaiser 2024 · Sepsis precoz (activada automáticamente en ≥ 35 sem)</strong>
@@ -965,7 +977,15 @@
                 </div>
                 <div style="font-size:13px;color:var(--navy);font-weight:500">Recomendación: ${esc(kaiser.recommendation)}</div>
               </div>
-            ` : ""}
+            ` : `
+              <div class="calc-box" aria-live="polite">
+                <div class="calc-header">
+                  <strong>Calculadora Kaiser 2024 · Sepsis precoz (activada automáticamente en ≥ 35 sem)</strong>
+                  <span class="status-pill status-warn">No calculable</span>
+                </div>
+                <div class="field-hint">Falta: ${kaiser.missing.map(esc).join(", ")}. No se asume ningún valor por defecto.</div>
+              </div>
+            `) : ""}
           </div>
         </div>
       </section>
@@ -1038,7 +1058,7 @@
           ` : ""}
 
           ${admSigned ? `
-            <div class="banner banner-ok">Ingreso validado por <strong>${esc(p.admissionDraft.validatedBy)}</strong> el <span class="mono">${esc(p.admissionDraft.validatedAt)}</span>. Documento de solo lectura.</div>
+            <div class="banner banner-ok">Ingreso validado por <strong>${esc(p.admissionDraft.validatedBy)}</strong> el <span class="mono">${esc(ENG.fmtDate(p.admissionDraft.validatedAt))}</span>. Documento de solo lectura.</div>
           ` : ""}
 
           ${draftVersionsHtml("admission", p.admissionDraft)}
@@ -1142,7 +1162,7 @@
               <div class="timeline-track" aria-label="Eventos de soporte respiratorio">
                 ${sorted.map((ev) => `
                   <article class="tl-node ${modClass(ev.modality)}">
-                    <div class="tl-day"><strong class="mono">Día ${ev.day}</strong><span class="mono">${esc(ev.date || "")}</span></div>
+                    <div class="tl-day"><strong class="mono">Día ${ev.day}</strong><span class="mono">${esc(ENG.fmtDate(ev.date))}</span></div>
                     <div class="tl-mod">${esc(ev.modality)}</div>
                     <div class="tl-meta">${esc(ev.event)}</div>
                     <div class="field-hint num">FiO2 ${ev.fio2 || "—"}% ${ev.peep ? `· PEEP ${ev.peep}` : ""} ${ev.flow ? `· Flujo ${ev.flow} L/m` : ""}</div>
@@ -1152,9 +1172,9 @@
             ` : `<div class="empty-state"><strong>Sin cambios respiratorios cargados</strong>Agregá el evento inicial de soporte para derivar los totales.</div>`}
 
             <div class="form-grid" style="margin-top:12px">
-              <div class="derived-item"><span class="derived-label">SDR</span><span class="derived-val">${esc(p.hosp.sdr)}</span></div>
+              <div class="derived-item"><span class="derived-label">SDR</span><span class="derived-val">${esc(p.hosp.sdr || "Sin responder")}</span></div>
               <div class="derived-item"><span class="derived-label">Surfactante</span><span class="derived-val">${p.hosp.surfactantDoses ? `${p.hosp.surfactantDoses} dosis (${p.hosp.surfactantHours}h · ${p.hosp.surfactantRoute})` : "No"}</span></div>
-              <div class="derived-item"><span class="derived-label">Neumotórax</span><span class="derived-val">${esc(p.hosp.pneumothorax)}</span></div>
+              <div class="derived-item"><span class="derived-label">Neumotórax</span><span class="derived-val">${esc(p.hosp.pneumothorax || "Sin responder")}</span></div>
             </div>
           </div>
         </section>
@@ -1183,7 +1203,7 @@
               <div class="derived-item"><span class="derived-label">Partió con leche materna</span><span class="derived-val">${nutr.startedHumanMilk === null ? "Sin dato" : nutr.startedHumanMilk ? "Sí" : "No"}</span></div>
               <div class="derived-item"><span class="derived-label">Alcanza 100 cc/kg/d</span><span class="derived-val">${nutr.day100cc !== null ? `DDV ${nutr.day100cc}` : "Aún no / Sin dato"}</span></div>
               <div class="derived-item"><span class="derived-label">Fortificación</span><span class="derived-val">${nutr.fortificationDay !== null ? `DDV ${nutr.fortificationDay}` : "No / Sin dato"}</span></div>
-              <div class="derived-item"><span class="derived-label">NEC</span><span class="derived-val">${esc(p.hosp.nec)}</span></div>
+              <div class="derived-item"><span class="derived-label">NEC</span><span class="derived-val">${esc(p.hosp.nec || "Sin responder")}</span></div>
             </div>
             <div class="table-wrap">
               <table class="clinical-table">
@@ -1192,7 +1212,7 @@
                   ${sorted.length ? sorted.map((e) => `
                     <tr>
                       <td class="mono">D${e.day}</td>
-                      <td class="num">${esc(e.date || "—")}</td>
+                      <td class="num">${esc(ENG.fmtDate(e.date) || "—")}</td>
                       <td><span class="status-pill ${e.route === "Parenteral" ? "status-warn" : e.route === "Enteral" ? "status-hosp" : "status-na"}">${esc(e.route)}</span></td>
                       <td><strong>${esc(e.event)}</strong></td>
                       <td class="num">${e.milk ? esc(e.milk) : "—"}${e.ccKg ? ` · ${e.ccKg} cc/kg/d` : ""}</td>
@@ -1322,12 +1342,12 @@
             <div class="panel-head"><h2 class="panel-title">Cardiovascular y Neurológico</h2></div>
             <div class="panel-body">
               <div class="derived-strip" style="margin-bottom:12px">
-                <div class="derived-item"><span class="derived-label">Ecocardiograma</span><span class="derived-val">${esc(p.hosp.cardio.echo)}</span></div>
-                <div class="derived-item"><span class="derived-label">DAP</span><span class="derived-val">${esc(p.hosp.cardio.dap)}</span></div>
+                <div class="derived-item"><span class="derived-label">Ecocardiograma</span><span class="derived-val">${esc(p.hosp.cardio.echo || "Sin responder")}</span></div>
+                <div class="derived-item"><span class="derived-label">DAP</span><span class="derived-val">${esc(p.hosp.cardio.dap || "Sin responder")}</span></div>
                 <div class="derived-item"><span class="derived-label">Tratamiento DAP</span><span class="derived-val">${esc(p.hosp.cardio.dapMed || "—")} / ${esc(p.hosp.cardio.dapInvasive || "—")}</span></div>
-                <div class="derived-item"><span class="derived-label">Ecografía cerebral</span><span class="derived-val">${esc(p.hosp.neuro.cranialUs)}</span></div>
-                <div class="derived-item"><span class="derived-label">RMN cerebral</span><span class="derived-val">${esc(p.hosp.neuro.mri)}</span></div>
-                <div class="derived-item"><span class="derived-label">Hidrocefalia</span><span class="derived-val">${esc(p.hosp.neuro.hydrocephalus)}</span></div>
+                <div class="derived-item"><span class="derived-label">Ecografía cerebral</span><span class="derived-val">${esc(p.hosp.neuro.cranialUs || "Sin responder")}</span></div>
+                <div class="derived-item"><span class="derived-label">RMN cerebral</span><span class="derived-val">${esc(p.hosp.neuro.mri || "Sin responder")}</span></div>
+                <div class="derived-item"><span class="derived-label">Hidrocefalia</span><span class="derived-val">${esc(p.hosp.neuro.hydrocephalus || "Sin responder")}</span></div>
               </div>
             </div>
           </section>
@@ -1462,6 +1482,7 @@
             <div class="field">
               <label for="ep-o2">Oxígeno domiciliario</label>
               <select class="select" id="ep-o2" data-dfield="homeO2" ${dis}>
+                <option value="">Sin responder</option>
                 <option value="No" ${d.homeO2 === "No" ? "selected" : ""}>No</option>
                 <option value="Sí" ${d.homeO2 === "Sí" ? "selected" : ""}>Sí</option>
               </select>
@@ -1498,7 +1519,7 @@
           ` : ""}
 
           ${epiSigned ? `
-            <div class="banner banner-ok">Epicrisis validada por <strong>${esc(p.epicrisisDraft.validatedBy)}</strong> el <span class="mono">${esc(p.epicrisisDraft.validatedAt)}</span>. Documento de solo lectura.</div>
+            <div class="banner banner-ok">Epicrisis validada por <strong>${esc(p.epicrisisDraft.validatedBy)}</strong> el <span class="mono">${esc(ENG.fmtDate(p.epicrisisDraft.validatedAt))}</span>. Documento de solo lectura.</div>
           ` : ""}
 
           ${!epiSigned && epiMissing.length ? `
@@ -1631,7 +1652,7 @@
                         <td><span class="status-pill ${row.action === "create" ? "status-hosp" : "status-alta"}">${row.action === "create" ? "Nuevo ingreso" : "Actualización"}</span></td>
                         <td>
                           <strong>${esc(row.fullName)}</strong>
-                          <div class="field-hint mono">${esc(row.hc)} · ${esc(row.sex)} · ${esc(row.birthDate)} · ${row.gaWeeks}+${row.gaDays} · ${row.birthWeight} g</div>
+                          <div class="field-hint mono">${esc(row.hc)} · ${esc(row.sex)} · ${esc(ENG.fmtDate(row.birthDate))} · ${row.gaWeeks}+${row.gaDays} · ${row.birthWeight} g</div>
                         </td>
                         <td>
                           <div style="display:flex;gap:4px;flex-wrap:wrap">
@@ -1817,7 +1838,7 @@
           <thead><tr><th>Campo</th><th>Valor</th></tr></thead>
           <tbody>
             <tr><td>Institución</td><td>${esc(state.institutionName)}</td></tr>
-            <tr><td>Fecha de exportación</td><td class="mono">${nowStamp()}</td></tr>
+            <tr><td>Fecha de exportación</td><td class="mono">${ENG.fmtDate(nowStamp())}</td></tr>
             <tr><td>Usuario exportador</td><td>${esc(r.name)} (${esc(r.roleLabel)})</td></tr>
             <tr><td>Versión de diccionario</td><td class="mono">neosalud-dict-v1.0</td></tr>
             <tr><td>Cómo leer los valores</td><td>«NA» = Fuera de riesgo (excluido de denominador). «SD» = En riesgo sin dato (deuda de registro). Nunca se imputan omisiones como normalidad.</td></tr>
@@ -1833,7 +1854,7 @@
               const fen = ENG.calcFenton2025(p.gaWeeks, p.gaDays, p.sex, p.birthWeight);
               const resp = ENG.deriveRespiratory(p);
               const cath = ENG.deriveCatheters(p);
-              return `<tr><td class="mono">${esc(p.id)}</td><td>${esc(p.sex)}</td><td class="num">${p.gaWeeks}+${p.gaDays}</td><td class="num">${p.birthWeight}</td><td>${esc(fen.classification.split(" ")[0])}</td><td class="num">${resp.totals.o2}</td><td>${esc(resp.jensen)}</td><td class="num">${cath.totalDays}</td><td>${esc(p.status)}</td></tr>`;
+              return `<tr><td class="mono">${esc(p.id)}</td><td>${esc(p.sex)}</td><td class="num">${esc(ENG.fmtGa(p.gaWeeks, p.gaDays, ""))}</td><td class="num">${esc(String(p.birthWeight ?? ""))}</td><td>${esc(fen.classification.split(" ")[0])}</td><td class="num">${resp.totals.o2}</td><td>${esc(resp.jensen)}</td><td class="num">${cath.totalDays}</td><td>${esc(p.status)}</td></tr>`;
             }).join("")}
           </tbody>
         </table>
@@ -1994,7 +2015,7 @@
               <tbody>
                 ${state.auditLog.map((a) => `
                   <tr>
-                    <td class="mono" style="white-space:nowrap">${esc(a.ts)}</td>
+                    <td class="mono" style="white-space:nowrap">${esc(ENG.fmtDate(a.ts))}</td>
                     <td><strong>${esc(a.user)}</strong><div class="field-hint">${esc(a.role)}</div></td>
                     <td>${esc(a.action)}</td>
                     <td class="mono">${esc(a.target)}</td>
@@ -2064,16 +2085,18 @@
   function showNewPatientModal() {
     openModal(
       "Alta rápida de paciente",
-      `<div class="form-grid">
-        <div class="field"><label for="np-name">Nombre / RN de</label><input class="input" id="np-name" placeholder="Ej. Benjamín Rojas" /></div>
-        <div class="field"><label for="np-hc">N° Historia Clínica</label><input class="input mono" id="np-hc" placeholder="Ej. HC-91500" /></div>
-        <div class="field"><label for="np-mother">Nombre de la madre</label><input class="input" id="np-mother" placeholder="Ej. Laura Rojas" /></div>
-        <div class="field"><label for="np-sex">Sexo</label><select class="select" id="np-sex"><option value="F">Femenino</option><option value="M">Masculino</option><option value="I">Indeterminado</option></select></div>
-        <div class="field"><label for="np-bdate">Fecha nacimiento</label><input class="input" id="np-bdate" type="date" value="${ENG.REF_DATE}" /></div>
-        <div class="field"><label for="np-sector">Sector inicial</label><select class="select" id="np-sector">${DATA.SECTORS.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("")}</select></div>
-        <div class="field"><label for="np-gaw">EG semanas</label><input class="input num" id="np-gaw" type="number" min="22" max="43" value="36" /></div>
-        <div class="field"><label for="np-gad">EG días</label><input class="input num" id="np-gad" type="number" min="0" max="6" value="2" /></div>
-        <div class="field"><label for="np-wt">Peso al nacer (g)</label><input class="input num" id="np-wt" type="number" min="350" max="5500" value="2650" /></div>
+      `<p class="field-hint" style="margin-bottom:12px">Solo el nombre es obligatorio. Lo que no completes queda como «Sin responder» y se carga después en la ficha de ingreso: la app nunca rellena datos clínicos por su cuenta.</p>
+      <div class="form-grid">
+        <div class="field"><label for="np-name">Nombre / RN de (obligatorio)</label><input class="input" id="np-name" placeholder="Ej. RN de Laura Rojas" /></div>
+        <div class="field"><label for="np-sex">Sexo</label><select class="select" id="np-sex"><option value="">Sin consignar</option><option value="F">Femenino</option><option value="M">Masculino</option><option value="I">Indeterminado</option></select></div>
+        <div class="field"><label for="np-hc">N° Historia Clínica</label><input class="input mono" id="np-hc" placeholder="Opcional" /></div>
+        <div class="field"><label for="np-mother">Nombre de la madre</label><input class="input" id="np-mother" placeholder="Opcional" /></div>
+        <div class="field"><label for="np-bdate">Fecha de nacimiento</label><input class="input" id="np-bdate" type="date" /></div>
+        <div class="field"><label for="np-adate">Fecha de ingreso a la unidad</label><input class="input" id="np-adate" type="date" value="${ENG.REF_DATE}" /></div>
+        <div class="field"><label for="np-sector">Sector inicial</label><select class="select" id="np-sector"><option value="">Sin asignar</option>${DATA.SECTORS.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("")}</select></div>
+        <div class="field"><label for="np-gaw">EG semanas</label><input class="input num" id="np-gaw" type="number" min="22" max="43" placeholder="Opcional" /></div>
+        <div class="field"><label for="np-gad">EG días</label><input class="input num" id="np-gad" type="number" min="0" max="6" placeholder="Opcional" /></div>
+        <div class="field"><label for="np-wt">Peso al nacer (g)</label><input class="input num" id="np-wt" type="number" min="350" max="5500" placeholder="Opcional" /></div>
       </div>`,
       `<button class="btn btn-secondary" type="button" data-close-modal>Cancelar</button>
        <button class="btn btn-primary" type="button" id="confirm-new-patient">Crear en Ingreso incompleto</button>`
@@ -2106,6 +2129,20 @@
     );
   }
 
+  // Ramas condicionales de la ficha de ingreso: qué respuesta abre la rama y qué subcampos contiene.
+  const CONDITIONAL_BRANCHES = {
+    parity: { label: "Multípara", openWhen: "Multipara", fields: ["parityDetail"] },
+    diabetes: { label: "Diabetes materna", openWhen: "Sí", fields: ["diabetesType", "diabetesTx", "hba1c"] },
+    rpo: { label: "Rotura prematura de membranas", openWhen: "Sí", fields: ["rpoHours", "chorio"] },
+    resuscitation: { label: "Reanimación", openWhen: "Sí", fields: ["vppi", "intubation", "chestCompressions", "maxO2Delivery", "adrenaline", "adrenalineDoses"] },
+    adrenaline: { label: "Adrenalina", openWhen: "Sí", fields: ["adrenalineDoses"] }
+  };
+  const BRANCH_FIELD_LABELS = {
+    parityDetail: "Detalle de paridad", diabetesType: "Tipo de diabetes", diabetesTx: "Tratamiento de diabetes", hba1c: "HbA1c",
+    rpoHours: "Horas de bolsa rota", chorio: "Corioamnionitis", vppi: "VPPI", intubation: "Intubación",
+    chestCompressions: "Masaje cardíaco", maxO2Delivery: "O2 máximo en sala de partos", adrenaline: "Adrenalina", adrenalineDoses: "Dosis de adrenalina"
+  };
+
   // ===================== DOCUMENTOS FIRMADOS: ENMIENDAS Y REGENERACIÓN =====================
   const DRAFT_KINDS = {
     admission: { key: "admissionDraft", label: "ingreso", title: "Nota de ingreso" },
@@ -2126,8 +2163,8 @@
           <strong>Versiones firmadas anteriores (${versions.length}).</strong>
           ${versions.map((v, i) => `
             <div style="margin-top:6px">
-              <span class="mono">v${i + 1}</span> · firmada por ${esc(v.validatedBy)} el <span class="mono">${esc(v.validatedAt)}</span>
-              · enmendada por ${esc(v.amendedBy)} el <span class="mono">${esc(v.amendedAt)}</span> · Motivo: ${esc(v.reason)}
+              <span class="mono">v${i + 1}</span> · firmada por ${esc(v.validatedBy)} el <span class="mono">${esc(ENG.fmtDate(v.validatedAt))}</span>
+              · enmendada por ${esc(v.amendedBy)} el <span class="mono">${esc(ENG.fmtDate(v.amendedAt))}</span> · Motivo: ${esc(v.reason)}
               <button class="btn btn-ghost btn-sm" type="button" data-view-version="${kind}:${i}">Ver</button>
             </div>
           `).join("")}
@@ -2279,33 +2316,17 @@
         if (pf) {
           p[pf] = val;
         } else if (af) {
-          // Zero-orphan rule when closing conditional branches
-          if (af === "parity" && val !== "Multipara" && p.admission.parityDetail) {
-            p.admission.parityDetail = "";
-            toast("Rama Multípara cerrada: detalle de paridad limpiado sin dejar datos huérfanos.");
-          }
-          if (af === "diabetes" && val !== "Sí" && (p.admission.diabetesType || p.admission.diabetesTx || p.admission.hba1c)) {
-            p.admission.diabetesType = "";
-            p.admission.diabetesTx = "";
-            p.admission.hba1c = "";
-            toast("Rama Diabetes cerrada: subcampos ocultos descartados.");
-          }
-          if (af === "rpo" && val !== "Sí" && (p.admission.rpoHours || p.admission.chorio)) {
-            p.admission.rpoHours = "";
-            p.admission.chorio = "";
-            toast("Rama RPO cerrada: subcampos descartados.");
-          }
-          if (af === "resuscitation" && val !== "Sí" && (p.admission.vppi || p.admission.intubation || p.admission.adrenaline)) {
-            p.admission.vppi = "";
-            p.admission.intubation = "";
-            p.admission.chestCompressions = "";
-            p.admission.maxO2Delivery = "";
-            p.admission.adrenaline = "";
-            p.admission.adrenalineDoses = "";
-            toast("Rama Reanimación cerrada: maniobras descartadas sin dejar datos huérfanos.");
-          }
-          if (af === "adrenaline" && val !== "Sí") {
-            p.admission.adrenalineDoses = "";
+          // Cero datos huérfanos: al cerrar una rama condicional se descartan TODOS sus subcampos
+          // con valor, y el descarte queda en la bitácora de auditoría.
+          const branch = CONDITIONAL_BRANCHES[af];
+          if (branch && val !== branch.openWhen) {
+            const discarded = branch.fields.filter((k) => p.admission[k] !== "" && p.admission[k] !== null && p.admission[k] !== undefined);
+            if (discarded.length) {
+              const detail = discarded.map((k) => `${BRANCH_FIELD_LABELS[k] || k}: ${p.admission[k]}`).join(", ");
+              discarded.forEach((k) => { p.admission[k] = ""; });
+              logAudit(`Descarte de rama «${branch.label}»`, `${p.id} (${p.fullName})`, `Respuesta cambiada a «${val || "Sin responder"}» · Subcampos descartados: ${detail}`);
+              toast(`Rama «${branch.label}» cerrada: ${discarded.length} subcampo(s) descartado(s) y registrado(s) en auditoría.`);
+            }
           }
           p.admission[af] = val;
         } else if (df) {
@@ -2674,17 +2695,11 @@
             if (row.decision !== "approved" || row.idCheck.status === "blocked") continue;
             if (row.action === "create") {
               const newId = nextCorrelativeId();
-              state.patients.unshift({
-                id: newId, hc: row.hc, fullName: row.fullName, motherName: row.motherName, motherDni: "",
-                sex: row.sex, birthDate: row.birthDate, birthTime: "", admitDate: row.birthDate, dischargeDate: "",
-                sector: row.sector || "Intermedios", status: "ingreso_incompleto",
-                gaWeeks: row.gaWeeks, gaDays: row.gaDays, birthWeight: row.birthWeight, birthLength: "", birthHc: "",
-                admission: { origin: "Intramuros", obstetrician: "", tempC: "", baseExcess: "", maternalAge: "", parity: "", parityDetail: "", antenatalSteroids: "", mgso4: "", diabetes: "", diabetesType: "", diabetesTx: "", hba1c: "", rpo: "", rpoHours: "", chorio: "", gbs: "Desconocido", maternalAbx: "No requerido", maternalMaxTemp: "", examStatus: "Buen aspecto", apgar1: "", apgar5: "", resuscitation: "", vppi: "", intubation: "", chestCompressions: "", maxO2Delivery: "", adrenaline: "", adrenalineDoses: "", diagnoses: [], validatedBy: "", validatedAt: "" },
-                admissionDraft: { text: "", snapshot: null, validated: false, validatedBy: "", validatedAt: "" },
-                hosp: { respCoverage: "incompleta", sdr: "No", surfactantDoses: 0, surfactantHours: "", surfactantRoute: "", pneumothorax: "No", respEvents: [], nutrCoverage: "incompleta", nec: "No", nutrEvents: [], iaasCoverage: "incompleta", earlySepsis: "No", iaasEpisodes: [], catheters: [], transfusions: [], cardio: { echo: "No", chd: "No", dap: "No", dapMed: "", dapInvasive: "" }, neuro: { apnea: "No", seizures: "No", cranialUs: "No realizada", mri: "No realizada", hydrocephalus: "No", hydroSurgery: "No" }, ropExams: [], surgeries: [] },
-                discharge: { date: "", condition: "", destination: "", weightG: "", lengthCm: "", hcCm: "", feeding: "", homeO2: "No", screenFei: "Pendiente", screenOea: "Pendiente", screenOximetry: "Pendiente", screenRedReflex: "Pendiente", vaccines: "Pendiente", diagnoses: [], medications: "", indications: "" },
-                epicrisisDraft: { text: "", snapshot: null, validated: false, validatedBy: "", validatedAt: "" }
-              });
+              state.patients.unshift(DATA.createBlankPatient({
+                id: newId, hc: row.hc, fullName: row.fullName, motherName: row.motherName,
+                sex: row.sex, birthDate: row.birthDate, admitDate: row.birthDate, sector: row.sector,
+                gaWeeks: row.gaWeeks, gaDays: row.gaDays, birthWeight: row.birthWeight
+              }));
               created++;
             } else if (row.targetId) {
               const target = state.patients.find((p) => p.id === row.targetId);
@@ -2928,30 +2943,20 @@
       const fullName = document.getElementById("np-name")?.value.trim();
       if (!fullName) { toast("Ingresá un nombre para el recién nacido."); return; }
       const newId = nextCorrelativeId();
-      const newPt = {
+      const optNum = (id) => { const raw = (document.getElementById(id)?.value || "").trim(); return raw === "" ? "" : Number(raw); };
+      const newPt = DATA.createBlankPatient({
         id: newId,
-        hc: document.getElementById("np-hc")?.value.trim() || `HC-${91400 + state.patients.length}`,
         fullName,
-        motherName: document.getElementById("np-mother")?.value.trim() || "",
-        motherDni: "",
-        sex: document.getElementById("np-sex")?.value || "F",
-        birthDate: document.getElementById("np-bdate")?.value || ENG.REF_DATE,
-        birthTime: "",
-        admitDate: document.getElementById("np-bdate")?.value || ENG.REF_DATE,
-        dischargeDate: "",
-        sector: document.getElementById("np-sector")?.value || "UCIN",
-        status: "ingreso_incompleto",
-        gaWeeks: Number(document.getElementById("np-gaw")?.value) || 36,
-        gaDays: Number(document.getElementById("np-gad")?.value) || 0,
-        birthWeight: Number(document.getElementById("np-wt")?.value) || 2600,
-        birthLength: "",
-        birthHc: "",
-        admission: { origin: "Intramuros", obstetrician: "", tempC: 36.6, baseExcess: "", maternalAge: "", parity: "", parityDetail: "", antenatalSteroids: "", mgso4: "", diabetes: "", diabetesType: "", diabetesTx: "", hba1c: "", rpo: "", rpoHours: "", chorio: "", gbs: "Desconocido", maternalAbx: "No requerido", maternalMaxTemp: 36.8, examStatus: "Buen aspecto", apgar1: "", apgar5: "", resuscitation: "", vppi: "", intubation: "", chestCompressions: "", maxO2Delivery: "", adrenaline: "", adrenalineDoses: "", diagnoses: [], validatedBy: "", validatedAt: "" },
-        admissionDraft: { text: "", snapshot: null, validated: false, validatedBy: "", validatedAt: "" },
-        hosp: { respCoverage: "incompleta", sdr: "No", surfactantDoses: 0, surfactantHours: "", surfactantRoute: "", pneumothorax: "No", respEvents: [], nutrCoverage: "incompleta", nec: "No", nutrEvents: [], iaasCoverage: "incompleta", earlySepsis: "No", iaasEpisodes: [], catheters: [], transfusions: [], cardio: { echo: "No", chd: "No", dap: "No", dapMed: "", dapInvasive: "" }, neuro: { apnea: "No", seizures: "No", cranialUs: "No realizada", mri: "No realizada", hydrocephalus: "No", hydroSurgery: "No" }, ropExams: [], surgeries: [] },
-        discharge: { date: "", condition: "", destination: "", weightG: "", lengthCm: "", hcCm: "", feeding: "", homeO2: "No", screenFei: "Pendiente", screenOea: "Pendiente", screenOximetry: "Pendiente", screenRedReflex: "Pendiente", vaccines: "Pendiente", diagnoses: [], medications: "", indications: "" },
-        epicrisisDraft: { text: "", snapshot: null, validated: false, validatedBy: "", validatedAt: "" }
-      };
+        hc: (document.getElementById("np-hc")?.value || "").trim(),
+        motherName: (document.getElementById("np-mother")?.value || "").trim(),
+        sex: document.getElementById("np-sex")?.value || "",
+        birthDate: document.getElementById("np-bdate")?.value || "",
+        admitDate: document.getElementById("np-adate")?.value || "",
+        sector: document.getElementById("np-sector")?.value || "",
+        gaWeeks: optNum("np-gaw"),
+        gaDays: optNum("np-gad"),
+        birthWeight: optNum("np-wt")
+      });
       state.patients.unshift(newPt);
       saveState();
       logAudit("Alta rápida de paciente", `${newId} (${fullName})`, `Sector ${newPt.sector} · Estado: ingreso_incompleto`);

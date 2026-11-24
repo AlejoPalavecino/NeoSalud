@@ -1,6 +1,34 @@
 (function (global) {
   const REF_DATE = "2026-11-22";
 
+  // Un valor vacío es «sin dato», nunca 0. Number("") devolvería 0 y haría pasar
+  // a un paciente sin EG como prematuro extremo.
+  function num(v) {
+    if (v === null || v === undefined || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  // Formato argentino para mostrar: 2026-07-28 → 28/07/2026 (conserva la hora si viene).
+  function fmtDate(v) {
+    if (!v) return "";
+    const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})(.*)$/);
+    return m ? `${m[3]}/${m[2]}/${m[1]}${m[4]}` : String(v);
+  }
+
+  function fmtGa(weeks, days, missing) {
+    const w = num(weeks);
+    if (w === null) return missing === undefined ? "Sin responder" : missing;
+    const d = num(days);
+    return d === null ? `${w}` : `${w}+${d}`;
+  }
+
+  function fmtWeight(g, missing) {
+    const w = num(g);
+    if (w === null) return missing === undefined ? "Sin responder" : missing;
+    return `${w.toLocaleString("es-AR")} g`;
+  }
+
   // Referencia aproximada Fenton 2025 por edad gestacional (23..42 sem) para la maqueta
   // Media de peso (g) y DE aproximada por semana (femenino ajusta -3.5%)
   const FENTON_WEIGHT_REF = {
@@ -25,11 +53,14 @@
   }
 
   function calcFenton2025(gaWeeks, gaDays, sex, weightG) {
-    const w = Number(gaWeeks);
-    const d = Number(gaDays || 0);
-    const wt = Number(weightG);
-    if (!w || !wt || w < 22 || w > 43) {
-      return { ready: false, zScore: null, percentile: null, classification: "Sin datos suficientes" };
+    const w = num(gaWeeks);
+    const d = num(gaDays) || 0;
+    const wt = num(weightG);
+    if (w === null || wt === null || w < 22 || w > 43) {
+      return { ready: false, zScore: null, percentile: null, classification: "Sin datos suficientes (EG y peso)" };
+    }
+    if (sex !== "F" && sex !== "M") {
+      return { ready: false, zScore: null, percentile: null, classification: "Requiere sexo femenino o masculino" };
     }
     const baseW = Math.max(23, Math.min(41, Math.floor(w)));
     const nextW = Math.min(42, baseW + 1);
@@ -56,11 +87,21 @@
   }
 
   function calcCrib2(gaWeeks, weightG, sex, tempC, baseExcess) {
-    const ga = Number(gaWeeks);
-    const wt = Number(weightG);
-    if (!(ga <= 32 || (wt > 0 && wt <= 1500))) {
+    const ga = num(gaWeeks);
+    const wt = num(weightG);
+    if (!((ga !== null && ga <= 32) || (wt !== null && wt <= 1500))) {
       return { applicable: false };
     }
+    const t = num(tempC);
+    const be = num(baseExcess);
+    const missing = [];
+    if (ga === null) missing.push("edad gestacional");
+    if (wt === null) missing.push("peso al nacer");
+    if (sex !== "F" && sex !== "M") missing.push("sexo");
+    if (t === null) missing.push("temperatura de ingreso");
+    if (be === null) missing.push("exceso de base");
+    if (missing.length) return { applicable: true, ready: false, missing };
+
     let score = 0;
     if (ga <= 24) score += 7;
     else if (ga <= 26) score += 5;
@@ -75,36 +116,39 @@
 
     if (sex === "M") score += 1;
 
-    const t = Number(tempC);
-    if (!isNaN(t) && tempC !== "") {
-      if (t < 35.5 || t > 38.0) score += 3;
-      else if (t < 36.5 || t > 37.5) score += 1;
-    }
+    if (t < 35.5 || t > 38.0) score += 3;
+    else if (t < 36.5 || t > 37.5) score += 1;
 
-    const be = Number(baseExcess);
-    if (!isNaN(be) && baseExcess !== "") {
-      if (be <= -10) score += 4;
-      else if (be <= -6) score += 2;
-      else if (be <= -3) score += 1;
-    }
+    if (be <= -10) score += 4;
+    else if (be <= -6) score += 2;
+    else if (be <= -3) score += 1;
 
     let level = "Riesgo bajo-moderado";
     if (score >= 12) level = "Riesgo elevado";
     else if (score >= 8) level = "Riesgo intermedio";
-    return { applicable: true, score, level };
+    return { applicable: true, ready: true, score, level };
   }
 
+  // romHours: horas de bolsa rota. Si no hubo rotura prematura, quien llama pasa 0 explícito.
   function calcKaiser2024(gaWeeks, gaDays, maxTempC, romHours, gbs, maternalAbx, examStatus) {
-    const ga = Number(gaWeeks);
-    if (!ga || ga < 35) return { applicable: false };
+    const ga = num(gaWeeks);
+    if (ga === null || ga < 35) return { applicable: false };
+
+    const temp = num(maxTempC);
+    const rom = num(romHours);
+    const missing = [];
+    if (temp === null) missing.push("temperatura materna máxima");
+    if (rom === null) missing.push("horas de bolsa rota");
+    if (!gbs) missing.push("estado de estreptococo grupo B");
+    if (!maternalAbx) missing.push("antibióticos intraparto");
+    if (!examStatus) missing.push("estado clínico del recién nacido");
+    if (missing.length) return { applicable: true, ready: false, missing };
 
     let baseRisk = 0.42;
-    const temp = Number(maxTempC || 37.0);
     if (temp >= 38.5) baseRisk *= 3.8;
     else if (temp >= 38.0) baseRisk *= 2.4;
     else if (temp >= 37.5) baseRisk *= 1.4;
 
-    const rom = Number(romHours || 0);
     if (rom >= 24) baseRisk *= 2.0;
     else if (rom >= 18) baseRisk *= 1.5;
 
@@ -129,7 +173,7 @@
       recommendation = "Hemocultivo y observación clínica estrecha (control de signos vitales cada 4 h por 24 h).";
       severity = "warn";
     }
-    return { applicable: true, riskBirth, posterior, recommendation, severity };
+    return { applicable: true, ready: true, riskBirth, posterior, recommendation, severity };
   }
 
   function diffDays(startIso, endIso) {
@@ -173,9 +217,9 @@
       return cur;
     }
 
-    const ga = Number(p.gaWeeks || 0);
-    const inRiskDbp = ga > 0 && ga < 32;
-    const day36w = Math.max(0, (36 - ga) * 7 - Number(p.gaDays || 0));
+    const ga = num(p.gaWeeks);
+    const inRiskDbp = ga !== null && ga < 32;
+    const day36w = ga === null ? 0 : Math.max(0, (36 - ga) * 7 - (num(p.gaDays) || 0));
 
     let o2Day28 = "Desconocido (cronología incompleta)";
     let o2At36w = "No aplica";
@@ -184,7 +228,14 @@
     let bancalari = "No aplica";
     let hasDbp = null; // true / false / null (missing) / "na"
 
-    if (!inRiskDbp) {
+    if (ga === null) {
+      hasDbp = null;
+      o2Day28 = "Sin EG registrada";
+      o2At36w = "Sin EG registrada";
+      vmiAt36w = "Sin EG registrada";
+      jensen = "No evaluable: falta la edad gestacional";
+      bancalari = "No evaluable: falta la edad gestacional";
+    } else if (!inRiskDbp) {
       hasDbp = "na";
       o2Day28 = complete ? (stay >= 28 && modalityAtDay(28)?.modality !== "AA" ? "Sí" : "No") : "Incompleta";
     } else if (!complete) {
@@ -296,8 +347,15 @@
 
   function deriveRopWorst(p) {
     const exams = p.hosp.ropExams || [];
-    const inRisk = Number(p.gaWeeks) < 32 || Number(p.birthWeight) <= 1500;
-    if (!inRisk) return { inRisk: false, summary: "Fuera de riesgo (No aplica)" };
+    const ga = num(p.gaWeeks);
+    const bw = num(p.birthWeight);
+    const inRisk = (ga !== null && ga < 32) || (bw !== null && bw <= 1500)
+      ? true
+      : (ga === null || bw === null ? null : false);
+    if (inRisk === null && !exams.length) {
+      return { inRisk: null, worstStage: null, treated: false, summary: "No se puede definir el riesgo: faltan EG o peso al nacer" };
+    }
+    if (inRisk === false) return { inRisk: false, summary: "Fuera de riesgo (No aplica)" };
     if (!exams.length) return { inRisk: true, worstStage: null, treated: false, summary: "Sin controles registrados (deuda de registro)" };
     let worst = exams[0];
     let treated = false;
@@ -395,6 +453,17 @@
     }).join("\n");
   }
 
+  function sexLabel(s) {
+    return s === "F" ? "Femenino" : s === "M" ? "Masculino" : s === "I" ? "Indeterminado" : "Sin responder";
+  }
+
+  // Si no hubo rotura prematura de membranas, las horas de bolsa rota son 0 por definición.
+  function calcKaiserFor(p) {
+    const a = p.admission;
+    const rom = a.rpo === "No" ? 0 : a.rpoHours;
+    return calcKaiser2024(p.gaWeeks, p.gaDays, a.maternalMaxTemp, rom, a.gbs, a.maternalAbx, a.examStatus);
+  }
+
   function valOrMissing(v, suffix) {
     if (v === null || v === undefined || v === "") return "Sin responder";
     return suffix ? `${v} ${suffix}` : String(v);
@@ -409,7 +478,8 @@
     const a = p.admission;
     const fenton = calcFenton2025(p.gaWeeks, p.gaDays, p.sex, p.birthWeight);
     const crib = calcCrib2(p.gaWeeks, p.birthWeight, p.sex, a.tempC, a.baseExcess);
-    const kaiser = calcKaiser2024(p.gaWeeks, p.gaDays, a.maternalMaxTemp, a.rpoHours, a.gbs, a.maternalAbx, a.examStatus);
+    const kaiser = calcKaiserFor(p);
+    const ga = num(p.gaWeeks);
 
     let transitionText = "";
     if (!a.apgar1 && !a.apgar5 && !a.resuscitation) {
@@ -435,13 +505,15 @@
       : "1. Sin diagnósticos consignados.";
 
     const ind = [
-      `1. Ingreso a sector ${p.sector} en incubadora / servocuna con control térmico.`,
+      `1. Ingreso a sector ${p.sector || "(sin asignar)"} en incubadora / servocuna con control térmico.`,
       "2. Monitorización multiparamétrica continua (FC, FR, SatO2).",
-      Number(p.gaWeeks) < 32
-        ? "3. Soporte respiratorio no invasivo/invasivo según protocolo de prematurez y control gasométrico."
-        : "3. Control clínico evolutivo de signos vitales y glucemia según protocolo."
+      ga === null
+        ? "3. Soporte y controles según evaluación clínica (edad gestacional sin registrar)."
+        : ga < 32
+          ? "3. Soporte respiratorio no invasivo/invasivo según protocolo de prematurez y control gasométrico."
+          : "3. Control clínico evolutivo de signos vitales y glucemia según protocolo."
     ];
-    if (kaiser.applicable && kaiser.posterior >= 3.0) {
+    if (kaiser.ready && kaiser.posterior >= 3.0) {
       ind.push(`4. Según Kaiser 2024 (riesgo posterior ${kaiser.posterior}/1000): ${kaiser.recommendation}`);
     }
 
@@ -449,8 +521,8 @@
       "NOTA DE INGRESO · SERVICIO DE NEONATOLOGÍA",
       "================================================================",
       `Paciente: ${p.fullName}          ID: ${p.id}`,
-      `HC: ${valOrMissing(p.hc)}        Sexo: ${p.sex === "F" ? "Femenino" : p.sex === "M" ? "Masculino" : "Sin responder"}`,
-      `Nacimiento: ${p.birthDate} ${valOrMissing(p.birthTime)}   Ingreso: ${p.admitDate}`,
+      `HC: ${valOrMissing(p.hc)}        Sexo: ${sexLabel(p.sex)}`,
+      `Nacimiento: ${valOrMissing(fmtDate(p.birthDate))} ${valOrMissing(p.birthTime)}   Ingreso: ${valOrMissing(fmtDate(p.admitDate))}`,
       "",
       "1. ANTECEDENTES PERINATALES",
       `Edad materna: ${valOrMissing(a.maternalAge, "años")} | Paridad: ${valOrMissing(a.parity)}${a.parityDetail ? ` (${a.parityDetail})` : ""}`,
@@ -459,12 +531,16 @@
       `RPO: ${valOrMissing(a.rpo)}${a.rpo === "Sí" ? ` (${valOrMissing(a.rpoHours, "h")} · Corioamnionitis: ${valOrMissing(a.chorio)})` : ""} | EGB: ${valOrMissing(a.gbs)}`,
       "",
       "2. ANAMNESIS Y ANTROPOMETRÍA AL NACER",
-      `Recién nacido de ${p.gaWeeks}+${p.gaDays} semanas, procedencia ${valOrMissing(a.origin)}, temperatura de ingreso ${valOrMissing(a.tempC, "°C")}.`,
-      `Peso al nacer: ${valOrMissing(p.birthWeight, "g")} · Fenton 2025: ${fenton.ready ? `${fenton.classification} (Z ${fenton.zScore}, P${fenton.percentile})` : "Sin datos suficientes"}.`,
+      `Edad gestacional: ${ga === null ? "Sin responder" : `${fmtGa(p.gaWeeks, p.gaDays)} semanas`} · Procedencia: ${valOrMissing(a.origin)} · Temperatura de ingreso: ${valOrMissing(a.tempC, "°C")}.`,
+      `Peso al nacer: ${fmtWeight(p.birthWeight)} · Fenton 2025: ${fenton.ready ? `${fenton.classification} (Z ${fenton.zScore}, P${fenton.percentile})` : `no calculable (${fenton.classification})`}.`,
       `Talla: ${valOrMissing(p.birthLength, "cm")} · Perímetro cefálico: ${valOrMissing(p.birthHc, "cm")}.`,
       transitionText,
-      crib.applicable ? `Score CRIB II calculado: ${crib.score} puntos (${crib.level}).` : "",
-      kaiser.applicable ? `Calculadora Kaiser 2024: riesgo basal ${kaiser.riskBirth}/1000 · riesgo posterior ${kaiser.posterior}/1000.` : "",
+      crib.applicable
+        ? (crib.ready ? `Score CRIB II calculado: ${crib.score} puntos (${crib.level}).` : `Score CRIB II: no calculable, falta ${crib.missing.join(", ")}.`)
+        : "",
+      kaiser.applicable
+        ? (kaiser.ready ? `Calculadora Kaiser 2024: riesgo basal ${kaiser.riskBirth}/1000 · riesgo posterior ${kaiser.posterior}/1000.` : `Calculadora Kaiser 2024: no calculable, falta ${kaiser.missing.join(", ")}.`)
+        : "",
       "",
       "3. EXAMEN FÍSICO DE INGRESO",
       "Estado general y piel: _____",
@@ -498,7 +574,19 @@
 
     const surgTxt = (p.hosp.surgeries || []).length
       ? p.hosp.surgeries.map((s) => `Día ${s.day}: ${s.procedure} (${s.outcome})`).join("; ")
-      : "No requirió procedimientos quirúrgicos.";
+      : "Sin cirugías registradas.";
+
+    // Sin eventos cargados no se informan «0 días»: se dice que no hay registros.
+    const respLines = r.eventCount
+      ? [
+          `Días acumulados: O2 ${r.totals.o2} d · CPAP ${r.totals.cpap} d · VNI ${r.totals.vni} d · VMC ${r.totals.vmc} d · VAFO ${r.totals.vafo} d.`,
+          `FiO2 máx 24h: ${r.maxFio224 ? r.maxFio224 + "%" : "Sin dato"} | O2 día 28: ${r.o2Day28} | O2 36 sem: ${r.o2At36w}.`
+        ]
+      : [r.complete ? "Sin soporte respiratorio (cronología completa al corte)." : "Sin eventos respiratorios registrados (cronología incompleta)."];
+    const nutrLine = (p.hosp.nutrEvents || []).length
+      ? `Días de NPT: ${n.nptDays} d | Inicio enteral: ${n.enteralStartDay !== null ? "DDV " + n.enteralStartDay : "Sin dato"} | 100 cc/kg/d: ${n.day100cc !== null ? "DDV " + n.day100cc : "Sin dato"} | Fortificación: ${n.fortificationDay !== null ? "DDV " + n.fortificationDay : "Sin dato"}.`
+      : "Sin eventos nutricionales registrados.";
+    const transfCount = (p.hosp.transfusions || []).length;
 
     const dxOut = (d.diagnoses && d.diagnoses.length ? d.diagnoses : p.admission.diagnoses || [])
       .map((code, i) => `${i + 1}. ${lookupDx(code)}`).join("\n");
@@ -507,14 +595,13 @@
       "EPICRISIS NEONATAL · SERVICIO DE NEONATOLOGÍA",
       "================================================================",
       `Paciente: ${p.fullName} | ID: ${p.id} | HC: ${valOrMissing(p.hc)}`,
-      `EG: ${p.gaWeeks}+${p.gaDays} sem | Peso nacimiento: ${p.birthWeight} g | Estadía: ${stay} días`,
-      `Ingreso: ${p.admitDate} | Egreso: ${valOrMissing(d.date)} | Condición: ${valOrMissing(d.condition)}`,
+      `EG: ${fmtGa(p.gaWeeks, p.gaDays)}${num(p.gaWeeks) !== null ? " sem" : ""} | Peso nacimiento: ${fmtWeight(p.birthWeight)} | Estadía: ${p.admitDate || p.birthDate ? `${stay} días` : "Sin responder (falta fecha de ingreso)"}`,
+      `Ingreso: ${valOrMissing(fmtDate(p.admitDate))} | Egreso: ${valOrMissing(fmtDate(d.date))} | Condición: ${valOrMissing(d.condition)}`,
       "",
       "1. EVOLUCIÓN RESPIRATORIA",
       `Cobertura de cronología: ${r.complete ? "Completa hasta el corte" : "Incompleta"}.`,
       `SDR: ${valOrMissing(p.hosp.sdr)}${p.hosp.surfactantDoses ? ` (Surfactante: ${p.hosp.surfactantDoses} dosis, vía ${p.hosp.surfactantRoute})` : ""}. Neumotórax: ${valOrMissing(p.hosp.pneumothorax)}.`,
-      `Días acumulados: O2 ${r.totals.o2} d · CPAP ${r.totals.cpap} d · VNI ${r.totals.vni} d · VMC ${r.totals.vmc} d · VAFO ${r.totals.vafo} d.`,
-      `FiO2 máx 24h: ${r.maxFio224 ? r.maxFio224 + "%" : "Sin dato"} | O2 día 28: ${r.o2Day28} | O2 36 sem: ${r.o2At36w}.`,
+      ...respLines,
       `DBP Jensen: ${r.jensen} | DBP Bancalari: ${r.bancalari}.`,
       "",
       "2. EVOLUCIÓN CARDIOVASCULAR",
@@ -524,7 +611,7 @@
       `Sepsis precoz: ${valOrMissing(p.hosp.earlySepsis)}. Episodios: ${iaasTxt}`,
       "",
       "4. NUTRICIÓN, CRECIMIENTO Y DIGESTIVO",
-      `Días de NPT: ${n.nptDays} d | Inicio enteral: ${n.enteralStartDay !== null ? "DDV " + n.enteralStartDay : "Sin dato"} | 100 cc/kg/d: ${n.day100cc !== null ? "DDV " + n.day100cc : "Sin dato"} | Fortificación: ${n.fortificationDay !== null ? "DDV " + n.fortificationDay : "Sin dato"}.`,
+      nutrLine,
       `NEC: ${valOrMissing(p.hosp.nec)}.`,
       "",
       "5. NEUROLÓGICO Y OFTALMOLÓGICO (ROP)",
@@ -532,7 +619,7 @@
       `ROP: ${rop.summary}.`,
       "",
       "6. ACCESOS VASCULARES, TRANSFUSIONES Y CIRUGÍAS",
-      `Catéteres centrales: ${c.count} episodios (${c.totalDays} días-catéter totales). Transfusiones: ${(p.hosp.transfusions || []).length}.`,
+      `Catéteres centrales: ${c.count ? `${c.count} episodios (${c.totalDays} días-catéter totales)` : "sin registros"}. Transfusiones: ${transfCount || "sin registros"}.`,
       `Procedimientos quirúrgicos: ${surgTxt}`,
       "",
       "7. CONDICIÓN AL EGRESO, PESQUISAS E INDICACIONES",
@@ -555,14 +642,16 @@
     const filtered = patients.filter((p) => {
       if (f.sector && f.sector !== "all" && p.sector !== f.sector) return false;
       if (f.gaGroup && f.gaGroup !== "all") {
-        const ga = Number(p.gaWeeks);
+        const ga = num(p.gaWeeks);
+        if (ga === null) return false;
         if (f.gaGroup === "<28" && !(ga < 28)) return false;
         if (f.gaGroup === "28-31" && !(ga >= 28 && ga <= 31)) return false;
         if (f.gaGroup === "32-36" && !(ga >= 32 && ga <= 36)) return false;
         if (f.gaGroup === ">=37" && !(ga >= 37)) return false;
       }
       if (f.weightGroup && f.weightGroup !== "all") {
-        const w = Number(p.birthWeight);
+        const w = num(p.birthWeight);
+        if (w === null) return false;
         if (f.weightGroup === "<1000" && !(w < 1000)) return false;
         if (f.weightGroup === "<1500" && !(w < 1500)) return false;
         if (f.weightGroup === "1500-2499" && !(w >= 1500 && w < 2500)) return false;
@@ -588,34 +677,36 @@
     const dbp = tally((p) => deriveRespiratory(p).hasDbp);
     const ropAny = tally((p) => {
       const r = deriveRopWorst(p);
+      if (r.inRisk === null) return null;
       if (!r.inRisk) return "na";
       if (r.worstStage === null) return null;
       return r.worstStage >= 1;
     });
     const ropSevere = tally((p) => {
       const r = deriveRopWorst(p);
+      if (r.inRisk === null) return null;
       if (!r.inRisk) return "na";
       if (r.worstStage === null) return null;
       return r.worstStage >= 3 || r.treated;
     });
-    const hivAny = tally((p) => {
-      if (Number(p.gaWeeks) >= 34 && p.hosp.neuro.cranialUs === "No realizada") return "na";
-      if (!p.hosp.neuro.cranialUs || p.hosp.neuro.cranialUs === "No realizada") return null;
-      return /HIV/i.test(p.hosp.neuro.cranialUs);
-    });
-    const hivSevere = tally((p) => {
-      if (Number(p.gaWeeks) >= 34 && p.hosp.neuro.cranialUs === "No realizada") return "na";
-      if (!p.hosp.neuro.cranialUs || p.hosp.neuro.cranialUs === "No realizada") return null;
-      return /III|IV/i.test(p.hosp.neuro.cranialUs);
-    });
-    const nec = tally((p) => {
-      if (p.hosp.nutrCoverage !== "completa" && p.hosp.nec !== "Sí") return null;
-      return p.hosp.nec === "Sí";
-    });
+    // Ecografía cerebral: si hay resultado, cuenta; si no, el RN ≥ 34 sem queda fuera de riesgo
+    // y el resto (o sin EG) es deuda de registro.
+    function cranialUsOutcome(p, pattern) {
+      const us = p.hosp.neuro.cranialUs;
+      if (us && us !== "No realizada") return pattern.test(us);
+      const ga = num(p.gaWeeks);
+      if (ga !== null && ga >= 34) return "na";
+      return null;
+    }
+    const hivAny = tally((p) => cranialUsOutcome(p, /HIV/i));
+    const hivSevere = tally((p) => cranialUsOutcome(p, /III|IV/i));
+    // NEC: solo una respuesta explícita es dato; vacío es deuda de registro.
+    const nec = tally((p) => (p.hosp.nec === "Sí" ? true : p.hosp.nec === "No" ? false : null));
     const dap = tally((p) => {
-      if (Number(p.gaWeeks) >= 35 && p.hosp.cardio.echo === "No") return "na";
-      if (p.hosp.cardio.echo !== "Sí") return null;
-      return p.hosp.cardio.dap === "Sí";
+      if (p.hosp.cardio.echo === "Sí") return p.hosp.cardio.dap === "Sí";
+      const ga = num(p.gaWeeks);
+      if (ga !== null && ga >= 35) return "na";
+      return null;
     });
     const iaas = tally((p) => {
       if (p.hosp.iaasCoverage !== "completa" && !(p.hosp.iaasEpisodes || []).length) return null;
@@ -674,9 +765,15 @@
 
   global.NEOSALUD_ENGINE = {
     REF_DATE,
+    num,
+    fmtDate,
+    fmtGa,
+    fmtWeight,
+    sexLabel,
     calcFenton2025,
     calcCrib2,
     calcKaiser2024,
+    calcKaiserFor,
     getPatientStayDays,
     deriveRespiratory,
     deriveNutrition,

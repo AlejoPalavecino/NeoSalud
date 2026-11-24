@@ -147,6 +147,56 @@
     "AA", "O2", "CN", "CNAF", "CPAP", "NIPPV", "BiPAP", "VMC", "VAFO", "ECMO"
   ];
 
+  // Versión del estado guardado en el navegador: si cambia la estructura, se recarga la demo.
+  const STATE_VERSION = 2;
+
+  // Paciente en blanco: todo lo clínico arranca vacío («Sin responder»). Nunca se completa
+  // un dato por defecto, porque se leería como un hallazgo registrado.
+  function createBlankPatient(init) {
+    const i = init || {};
+    return {
+      id: i.id,
+      hc: i.hc || "",
+      fullName: i.fullName || "",
+      motherName: i.motherName || "",
+      motherDni: "",
+      sex: i.sex || "",
+      birthDate: i.birthDate || "",
+      birthTime: "",
+      admitDate: i.admitDate || "",
+      dischargeDate: "",
+      sector: i.sector || "",
+      status: "ingreso_incompleto",
+      gaWeeks: i.gaWeeks ?? "",
+      gaDays: i.gaDays ?? "",
+      birthWeight: i.birthWeight ?? "",
+      birthLength: "",
+      birthHc: "",
+      admission: {
+        origin: "", obstetrician: "", tempC: "", baseExcess: "", maternalAge: "", parity: "", parityDetail: "",
+        antenatalSteroids: "", mgso4: "", diabetes: "", diabetesType: "", diabetesTx: "", hba1c: "",
+        rpo: "", rpoHours: "", chorio: "", gbs: "", maternalAbx: "", maternalMaxTemp: "", examStatus: "",
+        apgar1: "", apgar5: "", resuscitation: "", vppi: "", intubation: "", chestCompressions: "",
+        maxO2Delivery: "", adrenaline: "", adrenalineDoses: "", diagnoses: [], validatedBy: "", validatedAt: ""
+      },
+      admissionDraft: { text: "", snapshot: null, validated: false, validatedBy: "", validatedAt: "" },
+      hosp: {
+        respCoverage: "incompleta", sdr: "", surfactantDoses: "", surfactantHours: "", surfactantRoute: "", pneumothorax: "",
+        respEvents: [], nutrCoverage: "incompleta", nec: "", nutrEvents: [], iaasCoverage: "incompleta", earlySepsis: "",
+        iaasEpisodes: [], catheters: [], transfusions: [],
+        cardio: { echo: "", chd: "", dap: "", dapMed: "", dapInvasive: "" },
+        neuro: { apnea: "", seizures: "", cranialUs: "", mri: "", hydrocephalus: "", hydroSurgery: "" },
+        ropExams: [], surgeries: []
+      },
+      discharge: {
+        date: "", condition: "", destination: "", weightG: "", lengthCm: "", hcCm: "", feeding: "", homeO2: "",
+        screenFei: "", screenOea: "", screenOximetry: "", screenRedReflex: "", vaccines: "",
+        diagnoses: [], medications: "", indications: ""
+      },
+      epicrisisDraft: { text: "", snapshot: null, validated: false, validatedBy: "", validatedAt: "" }
+    };
+  }
+
   function createSeedState() {
     const patients = [
       {
@@ -959,7 +1009,7 @@
     ];
 
     return {
-      version: 1,
+      version: STATE_VERSION,
       activeRoleId: "planta",
       institutionName: "Clínica Materno-Infantil · Servicio de Neonatología",
       sessionTimeoutMin: 25,
@@ -976,6 +1026,8 @@
     MICROORGANISMS,
     ANTIBIOTICS,
     RESP_MODALITIES,
+    STATE_VERSION,
+    createBlankPatient,
     createSeedState
   };
 })(window);
