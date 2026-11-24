@@ -5,7 +5,7 @@
 //   scope    · "p" (dato del paciente) o "a" (dato del ingreso, p.admission)
 //   type     · select | number | text | date | time
 //   core     · true = variable núcleo; false = propuesta «A confirmar» con el servicio
-//   showIf   · { key, eq } o { key, in: [...] }: el campo solo existe si la respuesta del
+//   showIf   · { key, eq }, { key, in: [...] } o { key, notEq }: el campo solo existe si la respuesta del
 //              campo padre coincide. Al cerrarse la rama, su valor se descarta (cero huérfanos).
 //   options  · lista de valores o pares [valor, etiqueta]
 //
@@ -158,17 +158,175 @@
     }
   ];
 
-  const ALL_FIELDS = ADMISSION_SECTIONS.flatMap((s) => s.fields.map((f) => Object.assign({ sectionId: s.id }, f)));
+  // Datos estructurados por sistema durante la internación (scope "h" → p.hosp).
+  // «tab» indica en qué pestaña de Hospitalización se muestra cada sección.
+  const HOSP_SECTIONS = [
+    {
+      id: "h-resp", tab: "respiratorio", title: "Datos respiratorios estructurados",
+      sub: "Lo que no surge de la línea de tiempo se pregunta una sola vez",
+      fields: [
+        { key: "sdr", scope: "h", label: "Síndrome de dificultad respiratoria (EMH)", type: "select", core: true, options: YES_NO },
+        { key: "surfactantDoses", scope: "h", label: "Dosis de surfactante", type: "number", core: true, min: 0, max: 4, showIf: { key: "sdr", eq: "Sí" } },
+        { key: "surfactantRoute", scope: "h", label: "Técnica de administración", type: "select", core: true,
+          options: ["INSURE", "LISA / MIST", "Por tubo en ventilación mecánica"], showIf: { key: "sdr", eq: "Sí" } },
+        { key: "surfactantHours", scope: "h", label: "Edad a la primera dosis (horas)", type: "number", core: false, min: 0, showIf: { key: "sdr", eq: "Sí" } },
+        { key: "pneumothorax", scope: "h", label: "Neumotórax", type: "select", core: true, options: YES_NO },
+        { key: "pneumoDrain", scope: "h", label: "Requirió drenaje pleural", type: "select", core: true, options: YES_NO, showIf: { key: "pneumothorax", eq: "Sí" } }
+      ]
+    },
+    {
+      id: "h-nutr", tab: "nutricion", title: "Digestivo y crecimiento",
+      sub: "Enterocolitis, perforación, peso mínimo y suplementos",
+      fields: [
+        { key: "nec", scope: "h", label: "Enterocolitis necrotizante (NEC)", type: "select", core: true, options: YES_NO },
+        { key: "necStage", scope: "h", label: "Estadio de Bell", type: "select", core: true,
+          options: ["I (sospecha)", "II (confirmada)", "III (avanzada)"], showIf: { key: "nec", eq: "Sí" } },
+        { key: "necSurgery", scope: "h", label: "Cirugía por NEC", type: "select", core: true, options: YES_NO, showIf: { key: "nec", eq: "Sí" } },
+        { key: "sip", scope: "h", label: "Perforación intestinal espontánea", type: "select", core: true, options: YES_NO },
+        { key: "minWeight", scope: "h", label: "Peso mínimo (g)", type: "number", core: true, min: 300 },
+        { key: "minWeightDay", scope: "h", label: "Día de vida del peso mínimo", type: "number", core: true, min: 0 },
+        { key: "ironDay", scope: "h", label: "Día de inicio de hierro", type: "number", core: false, min: 0 },
+        { key: "vitDDay", scope: "h", label: "Día de inicio de vitamina D", type: "number", core: false, min: 0 },
+        { key: "zincDay", scope: "h", label: "Día de inicio de zinc", type: "number", core: false, min: 0 },
+        { key: "biweeklyLabs", scope: "h", label: "Laboratorios quincenales del prematuro (d15 a d120)", type: "select", core: false, options: YES_NO }
+      ]
+    },
+    {
+      id: "h-inf", tab: "infeccioso", title: "Sepsis precoz e infecciones de transmisión vertical",
+      sub: "Las ramas de Chagas, sífilis, HIV y hepatitis B aparecen solo si la serología materna fue reactiva",
+      fields: [
+        { key: "earlySepsis", scope: "h", label: "Sepsis precoz (< 72 h)", type: "select", core: true, options: YES_NO },
+        { key: "earlySepsisCulture", scope: "h", label: "Confirmación", type: "select", core: true,
+          options: ["Hemocultivo positivo", "Sepsis clínica (hemocultivo negativo)"], showIf: { key: "earlySepsis", eq: "Sí" } },
+        { key: "earlySepsisGerm", scope: "h", label: "Germen aislado", type: "text", core: true, showIf: { key: "earlySepsisCulture", eq: "Hemocultivo positivo" } },
+        { key: "colonization", scope: "h", label: "Colonización sin infección (vigilancia)", type: "select", core: false, options: YES_NO },
+        { key: "chagasRn", scope: "h", label: "Chagas congénito: estudio del RN", type: "select", core: true,
+          options: ["Micrométodo negativo · serología a los 10 meses", "Micrométodo positivo · en tratamiento", "Pendiente"],
+          showIf: { key: "chagas", eq: "Reactiva" } },
+        { key: "syphilisRn", scope: "h", label: "Sífilis congénita: conducta con el RN", type: "select", core: true,
+          options: ["VDRL del RN no reactiva · seguimiento", "Penicilina 10 días", "Penicilina benzatínica dosis única", "En evaluación"],
+          showIf: { key: "vdrl", eq: "Reactiva" } },
+        { key: "hivProphylaxis", scope: "h", label: "HIV: profilaxis antirretroviral del RN", type: "select", core: true, options: YES_NO,
+          showIf: { key: "hivSerology", eq: "Reactiva" } },
+        { key: "hbvProphylaxis", scope: "h", label: "Hepatitis B: gammaglobulina + vacuna en 12 h", type: "select", core: true, options: YES_NO,
+          showIf: { key: "hbsag", eq: "Reactiva" } }
+      ]
+    },
+    {
+      id: "h-cardio", tab: "otros", title: "Cardiovascular",
+      sub: "Ecocardiograma, cardiopatía congénita y ductus",
+      fields: [
+        { key: "cardio.echo", scope: "h", label: "Ecocardiograma realizado", type: "select", core: true, options: YES_NO },
+        { key: "cardio.chd", scope: "h", label: "Cardiopatía congénita", type: "select", core: true, options: YES_NO, showIf: { key: "cardio.echo", eq: "Sí" } },
+        { key: "cardio.dap", scope: "h", label: "Ductus arterioso permeable (DAP)", type: "select", core: true, options: YES_NO, showIf: { key: "cardio.echo", eq: "Sí" } },
+        { key: "cardio.dapMed", scope: "h", label: "Tratamiento farmacológico del DAP", type: "select", core: true,
+          options: ["No", "Ibuprofeno", "Indometacina", "Paracetamol"], showIf: { key: "cardio.dap", eq: "Sí" } },
+        { key: "cardio.dapInvasive", scope: "h", label: "Cierre invasivo del DAP", type: "select", core: true,
+          options: ["No", "Ligadura quirúrgica", "Cierre percutáneo"], showIf: { key: "cardio.dap", eq: "Sí" } }
+      ]
+    },
+    {
+      id: "h-neuro", tab: "otros", title: "Neurológico",
+      sub: "Apneas, convulsiones y neuroimágenes",
+      fields: [
+        { key: "neuro.apnea", scope: "h", label: "Apneas", type: "select", core: true, options: YES_NO },
+        { key: "neuro.seizures", scope: "h", label: "Convulsiones", type: "select", core: true, options: YES_NO },
+        { key: "neuro.cranialUs", scope: "h", label: "Ecografía cerebral (peor resultado)", type: "select", core: true,
+          options: ["Normal", "HIV grado I", "HIV grado II", "HIV grado III", "HIV grado IV", "Leucomalacia periventricular", "No realizada"] },
+        { key: "neuro.mri", scope: "h", label: "Resonancia magnética cerebral", type: "select", core: false,
+          options: ["Normal", "LMPV focal", "LMPV quística", "Otra lesión", "No realizada"] },
+        { key: "neuro.hydrocephalus", scope: "h", label: "Hidrocefalia posthemorrágica", type: "select", core: true, options: YES_NO },
+        { key: "neuro.hydroSurgery", scope: "h", label: "Tratamiento de la hidrocefalia", type: "select", core: true,
+          options: ["Sin cirugía", "Reservorio", "Derivación ventrículo-peritoneal"], showIf: { key: "neuro.hydrocephalus", eq: "Sí" } }
+      ]
+    }
+  ];
+
+  // Egreso (scope "d" → p.discharge). Si la condición es «Fallecido» se abre la rama de
+  // fallecimiento y se ocultan los datos que solo aplican a un egreso vivo.
+  const DISCHARGE_SECTIONS = [
+    {
+      id: "d-egreso", title: "Condición de egreso",
+      sub: "Fecha, condición y destino. Cierra la internación al firmar la epicrisis",
+      fields: [
+        { key: "date", scope: "d", label: "Fecha de egreso", type: "date", core: true },
+        { key: "condition", scope: "d", label: "Condición al egreso", type: "select", core: true,
+          options: ["Alta a domicilio", "Derivado a otra institución", "Fallecido"] },
+        { key: "destination", scope: "d", label: "Institución de destino", type: "text", core: true,
+          showIf: { key: "condition", eq: "Derivado a otra institución" } },
+        { key: "weightG", scope: "d", label: "Peso al egreso (g)", type: "number", core: true, showIf: { key: "condition", notEq: "Fallecido" } },
+        { key: "lengthCm", scope: "d", label: "Talla al egreso (cm)", type: "number", core: true, step: 0.1, showIf: { key: "condition", notEq: "Fallecido" } },
+        { key: "hcCm", scope: "d", label: "Perímetro cefálico al egreso (cm)", type: "number", core: true, step: 0.1, showIf: { key: "condition", notEq: "Fallecido" } },
+        { key: "feeding", scope: "d", label: "Alimentación al alta", type: "select", core: true,
+          options: [["Lactancia materna exclusiva", "Lactancia materna exclusiva (LME)"], "Alimentación mixta", "Fórmula", "Sonda / NPO"],
+          showIf: { key: "condition", notEq: "Fallecido" } },
+        { key: "homeO2", scope: "d", label: "Oxígeno domiciliario", type: "select", core: true, options: YES_NO, showIf: { key: "condition", notEq: "Fallecido" } },
+        { key: "deathCause", scope: "d", label: "Causa básica de muerte (CIE-10)", type: "text", core: true,
+          placeholder: "Ej. P07.0 · Peso extremadamente bajo al nacer", showIf: { key: "condition", eq: "Fallecido" } },
+        { key: "deathImmediate", scope: "d", label: "Causa inmediata", type: "text", core: false, showIf: { key: "condition", eq: "Fallecido" } },
+        { key: "deathPlace", scope: "d", label: "Lugar del fallecimiento", type: "select", core: true,
+          options: ["Unidad de neonatología", "Sala de partos", "Quirófano", "Otro sector"], showIf: { key: "condition", eq: "Fallecido" } },
+        { key: "autopsy", scope: "d", label: "Autopsia solicitada", type: "select", core: false, options: YES_NO, showIf: { key: "condition", eq: "Fallecido" } }
+      ]
+    },
+    {
+      id: "d-pesquisas", title: "Pesquisas y vacunas al alta",
+      sub: "Pesquisa neonatal (Ley 26.279), hipoacusia (Ley 25.415), cardiopatías, reflejo rojo y calendario nacional",
+      fields: [
+        { key: "screenFei", scope: "d", label: "Pesquisa endócrino-metabólica (FEI)", type: "select", core: true,
+          options: ["Tomada · resultado normal", "Tomada · resultado alterado (en seguimiento)", "Tomada · sin resultado aún", "No tomada"],
+          showIf: { key: "condition", notEq: "Fallecido" } },
+        { key: "screenOea", scope: "d", label: "Otoemisiones acústicas (OEA)", type: "select", core: true,
+          options: ["Pasa ambos oídos", "No pasa · derivar a ORL", "No realizada"], showIf: { key: "condition", notEq: "Fallecido" } },
+        { key: "screenOximetry", scope: "d", label: "Oximetría de pulso pre y posductal", type: "select", core: true,
+          options: ["Normal", "Alterada · derivar a cardiología", "No realizada"], showIf: { key: "condition", notEq: "Fallecido" } },
+        { key: "screenRedReflex", scope: "d", label: "Reflejo rojo", type: "select", core: true,
+          options: ["Normal", "Alterado · derivar a oftalmología", "No realizado"], showIf: { key: "condition", notEq: "Fallecido" } },
+        { key: "vacBcg", scope: "d", label: "Vacuna BCG", type: "select", core: true,
+          options: ["Aplicada", "Diferida (peso < 2.000 g u otra causa)", "Pendiente"], showIf: { key: "condition", notEq: "Fallecido" } },
+        { key: "vacHbv", scope: "d", label: "Vacuna Hepatitis B (primeras 12 h)", type: "select", core: true,
+          options: ["Aplicada", "Pendiente"], showIf: { key: "condition", notEq: "Fallecido" } }
+      ]
+    },
+    {
+      id: "d-indicaciones", title: "Medicación e indicaciones al alta",
+      sub: "Texto libre del equipo tratante",
+      fields: [
+        { key: "medications", scope: "d", label: "Medicación al alta", type: "textarea", core: true, showIf: { key: "condition", notEq: "Fallecido" } },
+        { key: "indications", scope: "d", label: "Indicaciones y controles", type: "textarea", core: true }
+      ]
+    }
+  ];
+
+  const ALL_FIELDS = [...ADMISSION_SECTIONS, ...HOSP_SECTIONS, ...DISCHARGE_SECTIONS]
+    .flatMap((s) => s.fields.map((f) => Object.assign({ sectionId: s.id }, f)));
   const FIELD_BY_KEY = Object.fromEntries(ALL_FIELDS.map((f) => [f.key, f]));
 
+  function container(p, f) {
+    if (f.scope === "p") return p;
+    if (f.scope === "h") return p.hosp;
+    if (f.scope === "d") return p.discharge;
+    return p.admission;
+  }
+
+  // Admite claves con punto («cardio.echo» → p.hosp.cardio.echo).
   function readField(p, f) {
-    const v = f.scope === "p" ? p[f.key] : p.admission[f.key];
-    return v === undefined || v === null ? "" : v;
+    let obj = container(p, f);
+    for (const k of f.key.split(".")) {
+      if (obj === undefined || obj === null) return "";
+      obj = obj[k];
+    }
+    return obj === undefined || obj === null ? "" : obj;
   }
 
   function writeField(p, f, v) {
-    if (f.scope === "p") p[f.key] = v;
-    else p.admission[f.key] = v;
+    let obj = container(p, f);
+    const parts = f.key.split(".");
+    for (const k of parts.slice(0, -1)) {
+      if (obj[k] === undefined || obj[k] === null) obj[k] = {};
+      obj = obj[k];
+    }
+    obj[parts[parts.length - 1]] = v;
   }
 
   function conditionMet(p, f) {
@@ -176,6 +334,7 @@
     const parent = FIELD_BY_KEY[f.showIf.key];
     if (parent && !conditionMet(p, parent)) return false;
     const v = parent ? readField(p, parent) : "";
+    if (f.showIf.notEq !== undefined) return v !== f.showIf.notEq;
     return f.showIf.in ? f.showIf.in.includes(v) : v === f.showIf.eq;
   }
 
@@ -196,6 +355,9 @@
 
   global.NEOSALUD_SCHEMA = {
     ADMISSION_SECTIONS,
+    HOSP_SECTIONS,
+    DISCHARGE_SECTIONS,
+    writeField,
     FIELD_BY_KEY,
     readField,
     conditionMet,

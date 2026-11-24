@@ -200,19 +200,21 @@
     const stay = Math.max(getPatientStayDays(p), events.length ? events[events.length - 1].day + 1 : 0);
     const complete = p.hosp.respCoverage === "completa";
 
-    const totals = { o2: 0, cpap: 0, vni: 0, vmc: 0, vafo: 0 };
+    const totals = { o2: 0, cpap: 0, cn: 0, cnaf: 0, vni: 0, vmc: 0, vafo: 0 };
     let maxFio224 = null;
 
     for (let i = 0; i < events.length; i++) {
       const ev = events[i];
       const nextDay = i + 1 < events.length ? events[i + 1].day : stay;
       const dur = Math.max(0, nextDay - ev.day);
-      if (ev.day <= 1 && ev.fio2) {
+      if (ev.day === 0 && ev.fio2) {
         maxFio224 = maxFio224 === null ? Number(ev.fio2) : Math.max(maxFio224, Number(ev.fio2));
       }
       if (ev.modality !== "AA") totals.o2 += dur;
       if (ev.modality === "CPAP") totals.cpap += dur;
-      if (ev.modality === "NIPPV" || ev.modality === "BiPAP" || ev.modality === "CNAF") totals.vni += dur;
+      if (ev.modality === "CN") totals.cn += dur;
+      if (ev.modality === "CNAF") totals.cnaf += dur;
+      if (ev.modality === "NIPPV" || ev.modality === "BiPAP") totals.vni += dur;
       if (ev.modality === "VMC") totals.vmc += dur;
       if (ev.modality === "VAFO") totals.vafo += dur;
     }
@@ -587,7 +589,7 @@
     // Sin eventos cargados no se informan «0 días»: se dice que no hay registros.
     const respLines = r.eventCount
       ? [
-          `Días acumulados: O2 ${r.totals.o2} d · CPAP ${r.totals.cpap} d · VNI ${r.totals.vni} d · VMC ${r.totals.vmc} d · VAFO ${r.totals.vafo} d.`,
+          `Días acumulados: O2 ${r.totals.o2} d · Cánula bajo flujo ${r.totals.cn} d · Cánula alto flujo ${r.totals.cnaf} d · CPAP ${r.totals.cpap} d · VNI ${r.totals.vni} d · VMC ${r.totals.vmc} d · VAFO ${r.totals.vafo} d.`,
           `FiO2 máx 24h: ${r.maxFio224 ? r.maxFio224 + "%" : "Sin dato"} | O2 día 28: ${r.o2Day28} | O2 36 sem: ${r.o2At36w}.`
         ]
       : [r.complete ? "Sin soporte respiratorio (cronología completa al corte)." : "Sin eventos respiratorios registrados (cronología incompleta)."];
@@ -633,7 +635,7 @@
       "7. CONDICIÓN AL EGRESO, PESQUISAS E INDICACIONES",
       `Destino: ${valOrMissing(d.destination)} | Peso egreso: ${valOrMissing(d.weightG, "g")} | Alimentación: ${valOrMissing(d.feeding)} | O2 domiciliario: ${valOrMissing(d.homeO2)}.`,
       `Pesquisas: FEI ${valOrMissing(d.screenFei)} · OEA ${valOrMissing(d.screenOea)} · Oximetría ${valOrMissing(d.screenOximetry)} · Reflejo rojo ${valOrMissing(d.screenRedReflex)}.`,
-      `Vacunas: ${valOrMissing(d.vaccines)}.`,
+      `Vacunas: BCG ${valOrMissing(d.vacBcg || d.vaccines)} · Hepatitis B ${valOrMissing(d.vacHbv)}.`,
       `Medicación al alta: ${valOrMissing(d.medications)}`,
       `Indicaciones: ${valOrMissing(d.indications)}`,
       "",

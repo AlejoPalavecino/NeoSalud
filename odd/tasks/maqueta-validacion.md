@@ -41,15 +41,15 @@ Base `main` · rama `maqueta-validacion` · un commit por corte, probado en el n
 - **Blocker:** none
 
 ### TASK-003 — Hospitalización y egreso completos
-- **State:** IN_PROGRESS
+- **State:** DONE
 - **Depends on:** TASK-001
 - **Owner:** orchestrator
 - **Acceptance:** Se registran por separado sepsis precoz y tardía, peso mínimo, perforación intestinal, cirugía por NEC, cánula de bajo y alto flujo, y suplementos; el egreso incluye datos de fallecimiento, pesquisa neonatal y auditiva estructuradas, y vacunas BCG y Hepatitis B.
-- **Evidence:** none
+- **Evidence:** 2026-11-24 · Navegador (:5173). Esquema extendido a 129 campos (scope h/d, claves con punto). Pestañas de Hospitalización con secciones editables: respiratorio (SDR, surfactante, neumotórax), digestivo (NEC + Bell + cirugía, perforación, peso mínimo, hierro/vit D/zinc, quincenales «A confirmar»), infeccioso (sepsis precoz con confirmación, ramas Chagas/sífilis/HIV/HBV que dependen de la serología materna), cardio (DAP con tratamiento) y neuro. Resumen respiratorio con cánula de bajo y alto flujo por separado; FiO₂ máx 24 h solo día 0. Egreso: Fallecido abre causa/lugar/autopsia y descarta (con auditoría) peso, pesquisas y vacunas; pesquisas FEI/OEA/oximetría/reflejo rojo y BCG/HBV estructuradas; borrador imprime BCG y HBV. Valores de demo anteriores se muestran como «(valor cargado)». 9 pacientes × vistas y pestañas sin errores.
 - **Blocker:** none
 
 ### TASK-004 — Borradores, Excel de 7 hojas y tasas
-- **State:** PLANNED
+- **State:** IN_PROGRESS
 - **Depends on:** TASK-002, TASK-003
 - **Owner:** orchestrator
 - **Acceptance:** La epicrisis incluye antecedentes perinatales, motivo de ingreso, tratamiento al alta y fallecimiento; el ingreso muestra la tabla perinatal a dos columnas; la vista previa del Excel tiene 7 hojas, entre ellas «Cómo leer los valores» y «Tasas de morbilidad»; las estadísticas separan sepsis precoz y tardía.

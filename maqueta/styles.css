@@ -1749,3 +1749,12 @@ details.form-section[open] > .panel-body {
 .grid-2 > *, .grid-equal > *, .grid-3 > * {
   min-width: 0;
 }
+
+/* Campos de texto largo del esquema ocupan toda la fila */
+.field.field-wide {
+  grid-column: 1 / -1;
+}
+
+.field .textarea {
+  min-height: 84px;
+}

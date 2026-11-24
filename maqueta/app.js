@@ -632,7 +632,7 @@
   function fieldControlHtml(f, p, canEdit, parent) {
     const v = SCHEMA.readField(p, f);
     const id = `fx-${f.key}`;
-    const dataAttr = f.scope === "p" ? `data-pfield="${f.key}"` : `data-afield="${f.key}"`;
+    const dataAttr = `data-sfield="${f.key}"`;
     const dis = canEdit ? "" : "disabled";
     let control;
     if (f.type === "select") {
@@ -650,14 +650,17 @@
         f.max !== undefined ? `max="${f.max}"` : "",
         f.step ? `step="${f.step}"` : ""
       ].join(" ");
-      control = `<input class="input${f.type === "number" ? " num" : ""}${f.mono ? " mono" : ""}" id="${id}" type="${type}" ${dataAttr} value="${esc(v)}" placeholder="${esc(f.placeholder || "Sin responder")}" ${attrs} ${dis} />`;
+      control = f.type === "textarea"
+        ? `<textarea class="textarea" id="${id}" ${dataAttr} rows="3" placeholder="${esc(f.placeholder || "Sin responder")}" ${dis}>${esc(v)}</textarea>`
+        : `<input class="input${f.type === "number" ? " num" : ""}${f.mono ? " mono" : ""}" id="${id}" type="${type}" ${dataAttr} value="${esc(v)}" placeholder="${esc(f.placeholder || "Sin responder")}" ${attrs} ${dis} />`;
     }
     const badge = f.core ? "" : ` <span class="badge-confirm" title="Variable propuesta: confirmar con el servicio si se registra">A confirmar</span>`;
     const branch = parent
       ? ` is-branch" title="Se muestra porque «${esc(parent.label)}» es «${esc(fieldDisplayValue(parent, SCHEMA.readField(p, parent)))}»`
       : "";
     const mark = parent ? `<span class="branch-mark" aria-hidden="true">↳</span>` : "";
-    return `<div class="field${v === "" ? " is-empty" : ""}${branch}"><label for="${id}">${mark}${esc(f.label)}${badge}</label>${control}</div>`;
+    const wide = f.type === "textarea" ? " field-wide" : "";
+    return `<div class="field${v === "" ? " is-empty" : ""}${wide}${branch}"><label for="${id}">${mark}${esc(f.label)}${badge}</label>${control}</div>`;
   }
 
   function schemaSectionHtml(sec, p, canEdit, ctx) {
@@ -670,6 +673,7 @@
       const kids = childrenOf(f.key);
       return fieldControlHtml(f, p, canEdit, parent) + (kids.length ? renderGroup(kids, f) : "");
     }).join("");
+    if (!visible.length) return "";
     const roots = visible.filter((f) => !f.showIf || !inSection.has(f.showIf.key));
     const filled = visible.filter((f) => SCHEMA.readField(p, f) !== "").length;
     const toConfirm = visible.filter((f) => !f.core).length;
@@ -959,7 +963,9 @@
             <div class="derived-strip">
               <div class="derived-item"><span class="derived-label">Días de O2</span><span class="derived-val">${resp.totals.o2} d</span></div>
               <div class="derived-item"><span class="derived-label">CPAP</span><span class="derived-val">${resp.totals.cpap} d</span></div>
-              <div class="derived-item"><span class="derived-label">VNI / CNAF</span><span class="derived-val">${resp.totals.vni} d</span></div>
+              <div class="derived-item"><span class="derived-label">Cánula bajo flujo</span><span class="derived-val">${resp.totals.cn} d</span></div>
+              <div class="derived-item"><span class="derived-label">Cánula alto flujo</span><span class="derived-val">${resp.totals.cnaf} d</span></div>
+              <div class="derived-item"><span class="derived-label">VNI (NIPPV / BiPAP)</span><span class="derived-val">${resp.totals.vni} d</span></div>
               <div class="derived-item"><span class="derived-label">VMC</span><span class="derived-val">${resp.totals.vmc} d</span></div>
               <div class="derived-item"><span class="derived-label">VAFO</span><span class="derived-val">${resp.totals.vafo} d</span></div>
               <div class="derived-item"><span class="derived-label">FiO2 máx 24h</span><span class="derived-val">${resp.maxFio224 ? resp.maxFio224 + "%" : "Sin dato"}</span></div>
@@ -1148,21 +1154,8 @@
       `;
     } else {
       tabHtml = `
-        <div class="grid-equal">
-          <section class="panel">
-            <div class="panel-head"><h2 class="panel-title">Cardiovascular y Neurológico</h2></div>
-            <div class="panel-body">
-              <div class="derived-strip" style="margin-bottom:12px">
-                <div class="derived-item"><span class="derived-label">Ecocardiograma</span><span class="derived-val">${esc(p.hosp.cardio.echo || "Sin responder")}</span></div>
-                <div class="derived-item"><span class="derived-label">DAP</span><span class="derived-val">${esc(p.hosp.cardio.dap || "Sin responder")}</span></div>
-                <div class="derived-item"><span class="derived-label">Tratamiento DAP</span><span class="derived-val">${esc(p.hosp.cardio.dapMed || "—")} / ${esc(p.hosp.cardio.dapInvasive || "—")}</span></div>
-                <div class="derived-item"><span class="derived-label">Ecografía cerebral</span><span class="derived-val">${esc(p.hosp.neuro.cranialUs || "Sin responder")}</span></div>
-                <div class="derived-item"><span class="derived-label">RMN cerebral</span><span class="derived-val">${esc(p.hosp.neuro.mri || "Sin responder")}</span></div>
-                <div class="derived-item"><span class="derived-label">Hidrocefalia</span><span class="derived-val">${esc(p.hosp.neuro.hydrocephalus || "Sin responder")}</span></div>
-              </div>
-            </div>
-          </section>
-
+        ${hospSchemaHtml(p, canEdit, "otros")}
+        <div>
           <section class="panel">
             <div class="panel-head">
               <div>
@@ -1217,8 +1210,16 @@
         `).join("")}
       </div>
 
+      ${ui.hospTab === "otros" ? "" : hospSchemaHtml(p, canEdit, ui.hospTab)}
+
       ${tabHtml}
     `;
+  }
+
+  function hospSchemaHtml(p, canEdit, tab) {
+    return SCHEMA.HOSP_SECTIONS.filter((sec) => sec.tab === tab)
+      .map((sec) => schemaSectionHtml(sec, p, canEdit, {}))
+      .join("");
   }
 
   // ===================== VIEW 5: EPICRISIS =====================
@@ -1248,71 +1249,7 @@
         </div>
       </div>
 
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">Condición de egreso, pesquisas y vacunas</h2>
-            <p class="panel-sub">Variables locales de cierre de internación</p>
-          </div>
-        </div>
-        <div class="panel-body">
-          <div class="form-grid">
-            <div class="field">
-              <label for="ep-date">Fecha de egreso</label>
-              <input class="input" id="ep-date" type="date" data-dfield="date" value="${esc(d.date)}" ${dis} />
-            </div>
-            <div class="field">
-              <label for="ep-cond">Condición al egreso</label>
-              <select class="select" id="ep-cond" data-dfield="condition" ${dis}>
-                <option value="">Sin responder</option>
-                <option value="Sano" ${d.condition === "Sano" ? "selected" : ""}>Sano</option>
-                <option value="Sano / Estable" ${d.condition === "Sano / Estable" ? "selected" : ""}>Sano / Estable</option>
-                <option value="Enfermo (crónico estable)" ${d.condition === "Enfermo (crónico estable)" ? "selected" : ""}>Enfermo (crónico estable)</option>
-                <option value="Trasladado" ${d.condition === "Trasladado" ? "selected" : ""}>Trasladado</option>
-                <option value="Fallecido" ${d.condition === "Fallecido" ? "selected" : ""}>Fallecido</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="ep-dest">Destino</label>
-              <input class="input" id="ep-dest" data-dfield="destination" value="${esc(d.destination)}" placeholder="Ej. Domicilio" ${dis} />
-            </div>
-            <div class="field">
-              <label for="ep-wt">Peso al egreso (g)</label>
-              <input class="input num" id="ep-wt" type="number" data-dfield="weightG" value="${esc(d.weightG)}" ${dis} />
-            </div>
-            <div class="field">
-              <label for="ep-feed">Alimentación al alta</label>
-              <select class="select" id="ep-feed" data-dfield="feeding" ${dis}>
-                <option value="">Sin responder</option>
-                <option value="Lactancia materna exclusiva" ${d.feeding === "Lactancia materna exclusiva" ? "selected" : ""}>Lactancia materna exclusiva (LME)</option>
-                <option value="Alimentación mixta" ${d.feeding === "Alimentación mixta" ? "selected" : ""}>Alimentación mixta</option>
-                <option value="Fórmula" ${d.feeding === "Fórmula" ? "selected" : ""}>Fórmula</option>
-                <option value="Sonda / NPO" ${d.feeding === "Sonda / NPO" || d.feeding === "NPO" ? "selected" : ""}>Sonda / NPO</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="ep-o2">Oxígeno domiciliario</label>
-              <select class="select" id="ep-o2" data-dfield="homeO2" ${dis}>
-                <option value="">Sin responder</option>
-                <option value="No" ${d.homeO2 === "No" ? "selected" : ""}>No</option>
-                <option value="Sí" ${d.homeO2 === "Sí" ? "selected" : ""}>Sí</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="ep-fei">Pesquisa metabólica (FEI)</label>
-              <input class="input" id="ep-fei" data-dfield="screenFei" value="${esc(d.screenFei)}" ${dis} />
-            </div>
-            <div class="field">
-              <label for="ep-oea">Pesquisa auditiva (OEA)</label>
-              <input class="input" id="ep-oea" data-dfield="screenOea" value="${esc(d.screenOea)}" ${dis} />
-            </div>
-            <div class="field">
-              <label for="ep-vax">Vacunas (BCG / Hep B)</label>
-              <input class="input" id="ep-vax" data-dfield="vaccines" value="${esc(d.vaccines)}" ${dis} />
-            </div>
-          </div>
-        </div>
-      </section>
+      ${SCHEMA.DISCHARGE_SECTIONS.map((sec) => schemaSectionHtml(sec, p, canEdit, {})).join("")}
 
       <section class="panel">
         <div class="panel-head">
@@ -2102,16 +2039,21 @@
     }
 
     // Ingreso structured fields (patient-level and admission-level)
-    main.querySelectorAll("[data-pfield], [data-afield], [data-dfield]").forEach((el) => {
+    main.querySelectorAll("[data-pfield], [data-afield], [data-dfield], [data-sfield]").forEach((el) => {
       el.onchange = () => {
         const p = activePatient();
         if (!p) return;
         const pf = el.getAttribute("data-pfield");
         const af = el.getAttribute("data-afield");
         const df = el.getAttribute("data-dfield");
+        const sf = el.getAttribute("data-sfield");
         const val = el.type === "number" ? (el.value === "" ? "" : Number(el.value)) : el.value;
 
-        if (pf) {
+        if (sf) {
+          const field = SCHEMA.FIELD_BY_KEY[sf];
+          SCHEMA.writeField(p, field, val);
+          if (field.scope === "d" && sf === "date") p.dischargeDate = val;
+        } else if (pf) {
           p[pf] = val;
         } else if (af) {
           p.admission[af] = val;
@@ -2122,11 +2064,11 @@
 
         // Cero datos huérfanos: si la respuesta cerró una rama condicional, se descartan
         // todos sus subcampos con valor y el descarte queda en la bitácora de auditoría.
-        if (pf || af) {
+        if (sf || pf || af) {
           const discarded = SCHEMA.discardClosedBranches(p);
           if (discarded.length) {
-            const parent = SCHEMA.FIELD_BY_KEY[pf || af];
-            const branchName = parent ? parent.label : (pf || af);
+            const parent = SCHEMA.FIELD_BY_KEY[sf || pf || af];
+            const branchName = parent ? parent.label : (sf || pf || af);
             const detail = discarded.map((d) => `${d.label}: ${d.value}`).join(", ");
             logAudit(`Descarte de rama «${branchName}»`, `${p.id} (${p.fullName})`, `Respuesta cambiada a «${val === "" ? "Sin responder" : val}» · Subcampos descartados: ${detail}`);
             toast(`Rama «${branchName}» cerrada: ${discarded.length} subcampo(s) descartado(s) y registrado(s) en auditoría.`);
