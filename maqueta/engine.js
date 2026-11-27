@@ -785,7 +785,25 @@
 
   function computeStatistics(patients, filters) {
     const f = filters || {};
-    const filtered = patients.filter((p) => {
+    const filtered = filterCohort(patients, f);
+    return statisticsFor(filtered);
+  }
+
+  // Cohorte según los filtros de Estadísticas. Período = fecha de ingreso a la unidad (inclusive).
+  function filterCohort(patients, filters) {
+    const f = filters || {};
+    return patients.filter((p) => {
+      if (f.from && (!p.admitDate || p.admitDate < f.from)) return false;
+      if (f.to && (!p.admitDate || p.admitDate > f.to)) return false;
+      if (f.outcome && f.outcome !== "all") {
+        const active = p.status === "hospitalizado" || p.status === "ingreso_incompleto";
+        if (f.outcome === "internados" && !active) return false;
+        if (f.outcome === "egresados" && p.status !== "egresado") return false;
+        if (f.outcome === "fallecidos" && p.status !== "fallecido") return false;
+        if (f.outcome === "desenlace" && active) return false;
+      }
+      if (f.sex && f.sex !== "all" && p.sex !== f.sex) return false;
+      if (f.origin && f.origin !== "all" && (p.admission && p.admission.origin) !== f.origin) return false;
       if (f.sector && f.sector !== "all" && p.sector !== f.sector) return false;
       if (f.gaGroup && f.gaGroup !== "all") {
         const ga = num(p.gaWeeks);
@@ -805,7 +823,9 @@
       }
       return true;
     });
+  }
 
+  function statisticsFor(filtered) {
     function tally(evalFn) {
       let yes = 0, no = 0, missing = 0, na = 0;
       for (const p of filtered) {
@@ -944,6 +964,8 @@
     generateAdmissionDraft,
     generateEpicrisisDraft,
     computeStatistics,
+    filterCohort,
+    statisticsFor,
     lookupDx
   };
 })(window);

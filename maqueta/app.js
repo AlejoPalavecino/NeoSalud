@@ -19,7 +19,8 @@
     ingresoVarFilter: "",
     collapsedSections: {},
     dxSearch: "",
-    statsFilters: { sector: "all", gaGroup: "all", weightGroup: "all" },
+    statsFilters: { period: "all", from: "", to: "", outcome: "all", sector: "all", gaGroup: "all", weightGroup: "all", sex: "all", origin: "all" },
+    statsTab: "resumen",
     importStep: 1,
     activeBatch: null,
     exportPreviewSheet: "metadatos",
@@ -1999,136 +2000,314 @@
   }
 
   // ===================== VIEW 7: ESTADÍSTICAS =====================
-  function viewEstadisticas() {
+  // ===================== ESTADÍSTICAS (análisis detallado, docs/08 §2) =====================
+  // Inicio da el pulso del día; acá se analiza una cohorte con filtros y cada número dice sobre
+  // cuántos bebés se calcula. Lo que no tiene el dato no se cuenta como sano.
+  const STATS_TABS = [
+    ["resumen", "Resumen"], ["poblacion", "Población"], ["respiratorio", "Respiratorio"], ["infecciones", "Infecciones"],
+    ["nutricion", "Nutrición"], ["por-eg", "Morbilidad por EG"], ["pacientes", "Pacientes"]
+  ];
+  const GA_BINS = [["< 24 sem", (g) => g < 24], ["24–27+6", (g) => g >= 24 && g < 28], ["28–31+6", (g) => g >= 28 && g < 32], ["32–36+6", (g) => g >= 32 && g < 37], ["≥ 37 sem", (g) => g >= 37]];
+  const WT_BINS = [["< 1.000 g", (w) => w < 1000], ["1.000–1.499 g", (w) => w >= 1000 && w < 1500], ["1.500–2.499 g", (w) => w >= 1500 && w < 2500], ["≥ 2.500 g", (w) => w >= 2500]];
+
+  function statsRange(f) {
+    if (f.period === "custom") return { from: f.from || "", to: f.to || "" };
+    if (f.period === "30" || f.period === "90") {
+      const d = new Date(Date.parse(ENG.REF_DATE) - Number(f.period) * 86400000).toISOString().slice(0, 10);
+      return { from: d, to: ENG.REF_DATE };
+    }
+    return { from: "", to: "" };
+  }
+
+  function statsCohort() {
     const f = ui.statsFilters;
-    const st = ENG.computeStatistics(state.patients, f);
+    return ENG.filterCohort(state.patients, Object.assign({}, f, statsRange(f)));
+  }
 
-    const morbidities = [
-      ["DBP (en < 32 sem)", st.dbp],
-      ["ROP (cualquier estadio, en riesgo)", st.ropAny],
-      ["ROP grave o tratada", st.ropSevere],
-      ["HIV (cualquier grado)", st.hivAny],
-      ["HIV grado III–IV", st.hivSevere],
-      ["Enterocolitis necrotizante (NEC)", st.nec],
-      ["Ductus arterioso permeable (DAP)", st.dap],
-      ["Sepsis precoz (< 72 h)", st.earlySepsis],
-      ["Sepsis tardía (> 72 h)", st.lateSepsis],
-      ["Infección asociada a cuidados (IAAS, cualquier foco)", st.iaas]
+  const median = (arr) => {
+    const a = arr.filter((x) => x !== null && x !== undefined && !Number.isNaN(x)).sort((x, y) => x - y);
+    if (!a.length) return null;
+    const m = Math.floor(a.length / 2);
+    return a.length % 2 ? a[m] : Number(((a[m - 1] + a[m]) / 2).toFixed(1));
+  };
+  const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : "—");
+  const frac = (a, b) => (b ? `${a}/${b} (${Math.round((a / b) * 1000) / 10}%)` : "Sin evaluables");
+
+  function barRowsHtml(items, total, opts) {
+    const max = Math.max(1, ...items.map((x) => x[1]));
+    return `<div class="bars" role="list">${items.map(([label, n, note]) => `
+      <div class="bar-row" role="listitem">
+        <span class="bar-label">${esc(label)}</span>
+        <span class="bar-track" aria-hidden="true"><span class="bar-fill${opts && opts.tone ? ` is-${opts.tone}` : ""}" style="width:${n ? Math.max(2, (n / max) * 100) : 0}%"></span></span>
+        <span class="bar-val num">${n}${total ? ` <span class="bar-pct">${pct(n, total)}</span>` : ""}${note ? ` <span class="bar-pct">${esc(note)}</span>` : ""}</span>
+      </div>`).join("")}</div>`;
+  }
+
+  function statPanel(title, sub, body) {
+    return `<section class="panel"><div class="panel-head"><div><h2 class="panel-title">${esc(title)}</h2>${sub ? `<p class="panel-sub">${esc(sub)}</p>` : ""}</div></div><div class="panel-body">${body}</div></section>`;
+  }
+
+  function morbidityTableHtml(st) {
+    const rows = [
+      ["DBP (en < 32 sem)", st.dbp], ["ROP (cualquier estadio, en riesgo)", st.ropAny], ["ROP grave o tratada", st.ropSevere],
+      ["HIV (cualquier grado)", st.hivAny], ["HIV grado III–IV", st.hivSevere], ["Enterocolitis necrotizante (NEC)", st.nec],
+      ["Ductus arterioso persistente (DAP)", st.dap], ["Sepsis precoz (< 72 h)", st.earlySepsis], ["Sepsis tardía (> 72 h)", st.lateSepsis],
+      ["IAAS (cualquier foco)", st.iaas]
     ];
+    return `
+      <div class="table-wrap"><table class="clinical-table">
+        <thead><tr><th>Indicador</th><th>Tasa (casos sobre bebés con el dato)</th><th>Cómo se compone</th></tr></thead>
+        <tbody>${rows.map(([label, m]) => {
+          const tot = Math.max(1, m.yes + m.no + m.missing + m.na);
+          return `<tr>
+            <td><strong>${esc(label)}</strong></td>
+            <td class="num" style="white-space:nowrap"><strong>${m.denom ? `${m.yes}/${m.denom} (${m.rate}%)` : "Sin evaluables"}</strong></td>
+            <td style="min-width:240px">
+              <div class="tri-bar" aria-hidden="true">
+                <div class="tri-seg-yes" style="width:${(m.yes / tot) * 100}%"></div><div class="tri-seg-no" style="width:${(m.no / tot) * 100}%"></div>
+                <div class="tri-seg-miss" style="width:${(m.missing / tot) * 100}%"></div><div class="tri-seg-na" style="width:${(m.na / tot) * 100}%"></div>
+              </div>
+              <div class="tri-legend num">
+                <span><i class="dot tri-seg-yes"></i>Sí: ${m.yes}</span><span><i class="dot tri-seg-no"></i>No: ${m.no}</span>
+                ${m.missing ? `<span style="color:var(--warn-ink);font-weight:600"><i class="dot tri-seg-miss"></i>Dato pendiente: ${m.missing}</span>` : ""}
+                ${m.na ? `<span><i class="dot tri-seg-na"></i>Fuera de riesgo: ${m.na}</span>` : ""}
+              </div>
+            </td></tr>`;
+        }).join("")}</tbody>
+      </table></div>`;
+  }
 
-    function triRow(label, m) {
-      const tot = Math.max(1, m.yes + m.no + m.missing + m.na);
-      const pY = (m.yes / tot) * 100;
-      const pN = (m.no / tot) * 100;
-      const pM = (m.missing / tot) * 100;
-      const pA = (m.na / tot) * 100;
+  function statsTabHtml(tab, cohort) {
+    const st = ENG.statisticsFor(cohort);
+    const n = cohort.length;
+    if (!n) return `<div class="empty-state"><strong>Ningún paciente cumple los filtros</strong>Probá ampliar el período o quitar algún filtro.</div>`;
+    const ga = (p) => ENG.num(p.gaWeeks);
+    const bw = (p) => ENG.num(p.birthWeight);
+
+    if (tab === "resumen") {
       return `
-        <tr>
-          <td><strong>${esc(label)}</strong></td>
-          <td class="num" style="white-space:nowrap">
-            <strong>${m.denom ? `${m.yes}/${m.denom} (${m.rate}%)` : "Sin evaluables"}</strong>
-          </td>
-          <td style="min-width:240px">
-            <div class="tri-bar" aria-label="${esc(label)}">
-              <div class="tri-seg-yes" style="width:${pY}%" title="Sí: ${m.yes}"></div>
-              <div class="tri-seg-no" style="width:${pN}%" title="No: ${m.no}"></div>
-              <div class="tri-seg-miss" style="width:${pM}%" title="En riesgo sin dato: ${m.missing}"></div>
-              <div class="tri-seg-na" style="width:${pA}%" title="Fuera de riesgo (No aplica): ${m.na}"></div>
-            </div>
-            <div class="tri-legend num">
-              <span><i class="dot tri-seg-yes"></i>Sí: ${m.yes}</span>
-              <span><i class="dot tri-seg-no"></i>No: ${m.no}</span>
-              ${m.missing ? `<span style="color:var(--warn-ink);font-weight:600"><i class="dot tri-seg-miss"></i>Dato pendiente: ${m.missing}</span>` : ""}
-              ${m.na ? `<span><i class="dot tri-seg-na"></i>Fuera de riesgo: ${m.na}</span>` : ""}
-            </div>
-          </td>
-        </tr>
-      `;
+        <section class="ledger-bar">
+          <div class="ledger-cell"><div class="ledger-label">Mortalidad (desenlace conocido)</div><div class="ledger-value">${st.mortalityRate !== null ? `${st.mortalityRate}%` : "—"}</div><div class="ledger-sub">${st.deceased} fallecido(s) sobre ${st.knownOutcomeCount} con desenlace · ${st.stillHosp} aún internados aparte</div></div>
+          <div class="ledger-cell"><div class="ledger-label">Bacteriemia / 1.000 días-catéter</div><div class="ledger-value is-teal">${st.clabsiRate1000 ?? "—"}</div><div class="ledger-sub">${st.clabsiEvents} evento(s) en ${st.totalCatheterDays} días-catéter</div></div>
+          <div class="ledger-cell"><div class="ledger-label">NAV / 1.000 días-ventilador</div><div class="ledger-value is-teal">${st.navRate1000 ?? "—"}</div><div class="ledger-sub">${st.navEvents} evento(s) en ${st.totalVentDays} días de VMC/VAFO</div></div>
+          <div class="ledger-cell"><div class="ledger-label">Lactancia exclusiva al alta</div><div class="ledger-value">${pct(st.lmeAtDischarge, st.dischargedAliveCount)}</div><div class="ledger-sub">${st.lmeAtDischarge} de ${st.dischargedAliveCount} egresos vivos · estadía media ${st.avgStay ?? "—"} d</div></div>
+        </section>
+        ${statPanel("Morbilidades", "Los bebés fuera de riesgo no entran en la cuenta; los que tienen el dato pendiente se informan aparte", morbidityTableHtml(st))}`;
     }
 
+    if (tab === "poblacion") {
+      const knownGa = cohort.filter((p) => ga(p) !== null);
+      const knownWt = cohort.filter((p) => bw(p) !== null);
+      const stays = cohort.filter((p) => !isActive(p)).map((p) => ENG.getPatientStayDays(p));
+      const preterm = knownGa.filter((p) => ga(p) < 37).length;
+      return `
+        <div class="stats-grid">
+          ${statPanel("Edad gestacional", `${preterm} nacidos antes de las 37 semanas · EG conocida en ${knownGa.length} de ${n}`,
+            barRowsHtml(GA_BINS.map(([l, fn]) => [l, knownGa.filter((p) => fn(ga(p))).length]), knownGa.length))}
+          ${statPanel("Peso al nacer", `Peso conocido en ${knownWt.length} de ${n}`,
+            barRowsHtml(WT_BINS.map(([l, fn]) => [l, knownWt.filter((p) => fn(bw(p))).length]), knownWt.length))}
+          ${statPanel("Desenlace", "Estado actual de la cohorte",
+            barRowsHtml([["Internados", cohort.filter(isActive).length], ["Egresados vivos", cohort.filter((p) => p.status === "egresado").length], ["Fallecidos", cohort.filter((p) => p.status === "fallecido").length]], n))}
+          ${statPanel("Sexo y procedencia", "",
+            barRowsHtml([["Femenino", cohort.filter((p) => p.sex === "F").length], ["Masculino", cohort.filter((p) => p.sex === "M").length], ["Sin consignar", cohort.filter((p) => !p.sex || p.sex === "I").length]], n)
+            + barRowsHtml([["Intramuros", cohort.filter((p) => p.admission && p.admission.origin === "Intramuros").length], ["Derivados", cohort.filter((p) => p.admission && p.admission.origin === "Derivado de otra institución").length]], n))}
+          ${statPanel("Estadía de los egresados", `${stays.length} egreso(s) en la cohorte`, stays.length ? `
+            <div class="kv-grid">
+              <div><span>Media</span><strong class="num">${(stays.reduce((a, b) => a + b, 0) / stays.length).toFixed(1)} d</strong></div>
+              <div><span>Mediana</span><strong class="num">${median(stays)} d</strong></div>
+              <div><span>Mínima</span><strong class="num">${Math.min(...stays)} d</strong></div>
+              <div><span>Máxima</span><strong class="num">${Math.max(...stays)} d</strong></div>
+            </div>` : `<p class="field-hint">Sin egresos en la cohorte.</p>`)}
+          ${statPanel("Internados por sector", "Ocupación de los internados de la cohorte",
+            barRowsHtml(DATA.SECTORS.map((s) => [s.name, cohort.filter((p) => isActive(p) && p.sector === s.id).length, `de ${s.capacity} cunas`]), 0))}
+        </div>`;
+    }
+
+    if (tab === "respiratorio") {
+      const resp = cohort.map((p) => ({ p, r: ENG.deriveRespiratory(p) }));
+      const withEvents = resp.filter((x) => x.r.eventCount);
+      const supports = [["Oxígeno", "o2"], ["CPAP", "cpap"], ["Cánula nasal bajo flujo", "cn"], ["Cánula nasal alto flujo", "cnaf"], ["VNI (NIPPV / BiPAP)", "vni"], ["Ventilación mecánica convencional", "vmc"], ["Alta frecuencia (VAFO)", "vafo"]];
+      const surfKnown = cohort.filter((p) => p.hosp.surfactant === "Sí" || p.hosp.surfactant === "No");
+      const dbpPop = resp.filter((x) => ga(x.p) !== null && ga(x.p) < 32);
+      const jensen = {};
+      dbpPop.forEach((x) => { jensen[x.r.jensen] = (jensen[x.r.jensen] || 0) + 1; });
+      return `
+        <div class="stats-grid">
+          ${statPanel("Soporte recibido", `Sobre ${withEvents.length} bebés con cronología respiratoria cargada; días: mediana entre quienes lo recibieron`, `
+            <div class="table-wrap"><table class="clinical-table">
+              <thead><tr><th>Soporte</th><th>Recibió</th><th>Días acumulados</th><th>Mediana de días</th></tr></thead>
+              <tbody>${supports.map(([l, k]) => {
+                const got = withEvents.filter((x) => x.r.totals[k] > 0);
+                return `<tr><td><strong>${l}</strong></td><td class="num">${frac(got.length, withEvents.length)}</td><td class="num">${got.reduce((a, x) => a + x.r.totals[k], 0)} d</td><td class="num">${got.length ? `${median(got.map((x) => x.r.totals[k]))} d` : "—"}</td></tr>`;
+              }).join("")}</tbody>
+            </table></div>`)}
+          ${statPanel("Surfactante y cronologías", "", `
+            <div class="kv-grid">
+              <div><span>Recibió surfactante</span><strong class="num">${frac(surfKnown.filter((p) => p.hosp.surfactant === "Sí").length, surfKnown.length)}</strong></div>
+              <div><span>Cronología completa al corte</span><strong class="num">${frac(cohort.filter((p) => p.hosp.respCoverage === "completa").length, n)}</strong></div>
+              <div><span>FiO₂ máx. 24 h (mediana)</span><strong class="num">${median(resp.map((x) => x.r.maxFio224)) ?? "—"}${median(resp.map((x) => x.r.maxFio224)) ? "%" : ""}</strong></div>
+            </div>`)}
+          ${statPanel("Clasificación de DBP (Jensen, calculada)", `Menores de 32 semanas: ${dbpPop.length}`,
+            dbpPop.length ? barRowsHtml(Object.entries(jensen).sort((a, b) => b[1] - a[1]), dbpPop.length) : `<p class="field-hint">Sin menores de 32 semanas en la cohorte.</p>`)}
+        </div>`;
+    }
+
+    if (tab === "infecciones") {
+      const eps = cohort.flatMap((p) => (p.hosp.iaasEpisodes || []).map((e) => ({ p, e })));
+      const count = (fn) => {
+        const m = {};
+        eps.forEach((x) => { const k = fn(x.e); if (k) m[k] = (m[k] || 0) + 1; });
+        return Object.entries(m).sort((a, b) => b[1] - a[1]);
+      };
+      const earlyGerms = {};
+      cohort.forEach((p) => { if (p.hosp.earlySepsisGerm) earlyGerms[p.hosp.earlySepsisGerm] = (earlyGerms[p.hosp.earlySepsisGerm] || 0) + 1; });
+      return `
+        <div class="stats-grid">
+          ${statPanel("Tasas", "Por bebé con el dato y por días de exposición", `
+            <div class="kv-grid">
+              <div><span>Sepsis precoz</span><strong class="num">${frac(st.earlySepsis.yes, st.earlySepsis.denom)}</strong></div>
+              <div><span>Sepsis tardía</span><strong class="num">${frac(st.lateSepsis.yes, st.lateSepsis.denom)}</strong></div>
+              <div><span>IAAS (cualquier foco)</span><strong class="num">${frac(st.iaas.yes, st.iaas.denom)}</strong></div>
+              <div><span>Bacteriemia / 1.000 días-catéter</span><strong class="num">${st.clabsiRate1000 ?? "—"}</strong></div>
+              <div><span>NAV / 1.000 días-ventilador</span><strong class="num">${st.navRate1000 ?? "—"}</strong></div>
+              <div><span>Episodios de IAAS</span><strong class="num">${eps.length}</strong></div>
+            </div>`)}
+          ${statPanel("IAAS por cuadro clínico", `${eps.length} episodio(s)`, eps.length ? barRowsHtml(count((e) => e.syndrome), eps.length) : `<p class="field-hint">Sin episodios en la cohorte.</p>`)}
+          ${statPanel("Gérmenes aislados en IAAS", "Lista cerrada compartida con la sepsis precoz", eps.length ? barRowsHtml(count((e) => (e.germ === "Otro (detallar)" ? e.germOther || "Otro" : e.germ)), 0) : `<p class="field-hint">Sin episodios en la cohorte.</p>`)}
+          ${statPanel("Gérmenes de la sepsis precoz", "", Object.keys(earlyGerms).length ? barRowsHtml(Object.entries(earlyGerms).sort((a, b) => b[1] - a[1]), 0) : `<p class="field-hint">Sin sepsis precoz con germen aislado.</p>`)}
+          ${statPanel("Antibióticos más usados en IAAS", "Antibiótico 1 y 2 de cada episodio", eps.length ? barRowsHtml(Object.entries(eps.flatMap((x) => [x.e.abx1, x.e.abx2]).filter(Boolean).reduce((m, a) => { m[a] = (m[a] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 8), 0) : `<p class="field-hint">Sin episodios en la cohorte.</p>`)}
+        </div>`;
+    }
+
+    if (tab === "nutricion") {
+      const nut = cohort.map((p) => ({ p, n: ENG.deriveNutrition(p) }));
+      const npt = nut.filter((x) => x.n.nptDays > 0);
+      const gains = cohort.map((p) => { const v = TL.growthVelocities(p); return (v.d28 && v.d28.gkgd) ?? null; }).filter((x) => x !== null);
+      const alive = cohort.filter((p) => p.status === "egresado");
+      const feeding = {};
+      alive.forEach((p) => { const f = p.discharge.feeding || "Sin consignar"; feeding[f] = (feeding[f] || 0) + 1; });
+      return `
+        <div class="stats-grid">
+          ${statPanel("Hitos nutricionales", "Medianas en día de vida, entre quienes alcanzaron el hito", `
+            <div class="kv-grid">
+              <div><span>Recibió parenteral</span><strong class="num">${frac(npt.length, n)}</strong></div>
+              <div><span>Días de parenteral (mediana)</span><strong class="num">${npt.length ? `${median(npt.map((x) => x.n.nptDays))} d` : "—"}</strong></div>
+              <div><span>Inicio enteral (mediana)</span><strong class="num">${median(nut.map((x) => x.n.enteralStartDay)) ?? "—"}</strong></div>
+              <div><span>100 cc/kg/día (mediana)</span><strong class="num">${median(nut.map((x) => x.n.day100cc)) ?? "—"}</strong></div>
+              <div><span>Inició con leche materna</span><strong class="num">${frac(nut.filter((x) => x.n.startedHumanMilk === true).length, nut.filter((x) => x.n.startedHumanMilk !== null).length)}</strong></div>
+              <div><span>Fortificación</span><strong class="num">${frac(nut.filter((x) => x.n.fortificationDay !== null).length, n)}</strong></div>
+            </div>`)}
+          ${statPanel("Crecimiento", "Ganancia de peso entre el control de 14 y el de 28 días (método exponencial)", gains.length ? `
+            <div class="kv-grid">
+              <div><span>Bebés con el dato</span><strong class="num">${gains.length}</strong></div>
+              <div><span>Mediana</span><strong class="num">${median(gains)} g/kg/día</strong></div>
+              <div><span>Menos de 15 g/kg/día</span><strong class="num">${frac(gains.filter((g) => g < 15).length, gains.length)}</strong></div>
+            </div>` : `<p class="field-hint">Sin evaluaciones nutricionales a los 28 días en la cohorte.</p>`)}
+          ${statPanel("Alimentación al alta", `${alive.length} egresos vivos`, alive.length ? barRowsHtml(Object.entries(feeding).sort((a, b) => b[1] - a[1]), alive.length) : `<p class="field-hint">Sin egresos vivos en la cohorte.</p>`)}
+          ${statPanel("Enterocolitis y perforación", "", `
+            <div class="kv-grid">
+              <div><span>NEC</span><strong class="num">${frac(st.nec.yes, st.nec.denom)}</strong></div>
+              <div><span>NEC con cirugía</span><strong class="num">${cohort.filter((p) => p.hosp.necSurgery === "Sí").length}</strong></div>
+              <div><span>Perforación espontánea</span><strong class="num">${frac(cohort.filter((p) => p.hosp.sip === "Sí").length, cohort.filter((p) => p.hosp.sip === "Sí" || p.hosp.sip === "No").length)}</strong></div>
+            </div>`)}
+        </div>`;
+    }
+
+    if (tab === "por-eg") {
+      const groups = [["< 28 sem", (g) => g < 28], ["28–31+6", (g) => g >= 28 && g < 32], ["32–36+6", (g) => g >= 32 && g < 37], ["≥ 37 sem", (g) => g >= 37]];
+      const cols = [["Mortalidad", (s) => (s.knownOutcomeCount ? `${s.deceased}/${s.knownOutcomeCount} (${s.mortalityRate}%)` : "—")], ["DBP", (s) => frac(s.dbp.yes, s.dbp.denom)],
+        ["HIV III–IV", (s) => frac(s.hivSevere.yes, s.hivSevere.denom)], ["NEC", (s) => frac(s.nec.yes, s.nec.denom)], ["ROP grave", (s) => frac(s.ropSevere.yes, s.ropSevere.denom)],
+        ["Sepsis tardía", (s) => frac(s.lateSepsis.yes, s.lateSepsis.denom)], ["Estadía media", (s) => (s.avgStay !== null ? `${s.avgStay} d` : "—")]];
+      return statPanel("Morbilidad por grupo de edad gestacional", "Cada celda: casos sobre bebés del grupo con el dato. Los grupos sin evaluables muestran «Sin evaluables»", `
+        <div class="table-wrap"><table class="clinical-table stats-cross">
+          <thead><tr><th>Grupo</th><th>Bebés</th>${cols.map(([l]) => `<th>${l}</th>`).join("")}</tr></thead>
+          <tbody>${groups.map(([l, fn]) => {
+            const sub = cohort.filter((p) => ga(p) !== null && fn(ga(p)));
+            const s = ENG.statisticsFor(sub);
+            return `<tr><th scope="row">${l}</th><td class="num">${sub.length}</td>${cols.map(([, f]) => `<td class="num">${sub.length ? f(s) : "—"}</td>`).join("")}</tr>`;
+          }).join("")}
+          <tr class="row-total"><th scope="row">Total</th><td class="num">${n}</td>${cols.map(([, f]) => `<td class="num">${f(st)}</td>`).join("")}</tr></tbody>
+        </table></div>`);
+    }
+
+    // Pacientes de la cohorte (lista navegable y descargable)
+    return `
+      <section class="panel">
+        <div class="panel-head">
+          <div><h2 class="panel-title">Pacientes de la cohorte</h2><p class="panel-sub">${n} paciente(s). Tocá una fila para abrirlo en Hospitalización y epicrisis</p></div>
+          <button class="btn btn-secondary btn-sm" type="button" id="btn-stats-csv">${activeRole().permissions.exportFull ? "Descargar CSV" : "Descargar CSV sin nombres"}</button>
+        </div>
+        <div class="panel-body tight"><div class="table-wrap"><table class="clinical-table rows-clickable">
+          <thead><tr><th>Paciente</th><th>EG</th><th>Peso</th><th>Sexo</th><th>Ingreso</th><th>Días</th><th>Estado</th><th>DBP</th><th>Sepsis tardía</th><th>NEC</th></tr></thead>
+          <tbody>${statsPatientRows(cohort).map((r) => `
+            <tr data-he-goto="${esc(r.id)}" data-he-goto-tab="resumen" tabindex="0">
+              <td><strong>${esc(r.name)}</strong></td><td class="num">${esc(r.ga)}</td><td class="num">${esc(r.weight)}</td><td>${esc(r.sex)}</td>
+              <td class="num">${esc(r.admit)}</td><td class="num">${r.days}</td><td>${statusBadge(r.status)}</td><td>${esc(r.dbp)}</td><td>${esc(r.late)}</td><td>${esc(r.nec)}</td>
+            </tr>`).join("")}</tbody>
+        </table></div></div>
+      </section>`;
+  }
+
+  function statsPatientRows(cohort) {
+    return cohort.map((p) => {
+      const r = ENG.deriveRespiratory(p);
+      const late = (p.hosp.iaasEpisodes || []).some((e) => e.syndrome === "Sepsis");
+      return {
+        id: p.id, name: p.fullName, ga: ENG.fmtGa(p.gaWeeks, p.gaDays, "—"), weight: ENG.fmtWeight(p.birthWeight, "—"),
+        sex: p.sex === "F" ? "F" : p.sex === "M" ? "M" : "—", admit: ENG.fmtDate(p.admitDate) || "—", days: ENG.getPatientStayDays(p), status: p.status,
+        dbp: r.hasDbp === true ? "Sí" : r.hasDbp === false ? "No" : r.hasDbp === "na" ? "No aplica" : "Pendiente",
+        late: late ? "Sí" : p.hosp.iaasCoverage === "completa" ? "No" : "Sin confirmar", nec: p.hosp.nec || "Sin dato"
+      };
+    });
+  }
+
+  function viewEstadisticas() {
+    const f = ui.statsFilters;
+    const tab = ui.statsTab || "resumen";
+    const cohort = statsCohort();
+    const range = statsRange(f);
+    const sel = (id, key, opts) => `<select class="select" id="${id}" data-sfilter="${key}">${opts.map(([v, l]) => `<option value="${esc(v)}" ${String(f[key]) === String(v) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+    const labels = {
+      period: { "30": "Últimos 30 días", "90": "Últimos 90 días", custom: `Ingresos ${range.from ? ENG.fmtDate(range.from) : "…"} – ${range.to ? ENG.fmtDate(range.to) : "…"}` },
+      outcome: { internados: "Internados", desenlace: "Con desenlace", egresados: "Egresados vivos", fallecidos: "Fallecidos" },
+      sex: { F: "Femenino", M: "Masculino" },
+      origin: { Intramuros: "Intramuros", "Derivado de otra institución": "Derivados" },
+      gaGroup: { "<28": "< 28 sem", "28-31": "28–31+6 sem", "32-36": "32–36+6 sem", ">=37": "≥ 37 sem" },
+      weightGroup: { "<1000": "< 1.000 g", "<1500": "< 1.500 g", "1500-2499": "1.500–2.499 g", ">=2500": "≥ 2.500 g" },
+      sector: Object.fromEntries(DATA.SECTORS.map((s) => [s.id, s.name]))
+    };
+    const chips = Object.keys(labels).filter((k) => f[k] && f[k] !== "all").map((k) => `
+      <button class="chip" type="button" data-sfilter-clear="${k}" aria-label="Quitar filtro ${esc(labels[k][f[k]] || f[k])}">${esc(labels[k][f[k]] || f[k])} <span aria-hidden="true">×</span></button>`).join("");
     return `
       <div class="page-header">
         <div>
-          <h1 class="page-title">Estadísticas e indicadores de la unidad</h1>
-          <p class="page-desc">Cada tasa dice sobre cuántos bebés se calcula. Un bebé sin el dato no se cuenta como sano: se muestra aparte como pendiente.</p>
+          <h1 class="page-title">Estadísticas</h1>
+          <p class="page-desc">Análisis de la unidad con filtros. Cada tasa dice sobre cuántos bebés se calcula; un bebé sin el dato no se cuenta como sano, se muestra aparte como pendiente.</p>
         </div>
       </div>
-
-      <section class="panel">
+      <section class="panel stats-filters">
         <div class="filter-bar">
-          <div class="field" style="min-width:170px">
-            <label for="sf-sector">Sector</label>
-            <select class="select" id="sf-sector">
-              <option value="all" ${f.sector === "all" ? "selected" : ""}>Todos los sectores</option>
-              ${DATA.SECTORS.map((s) => `<option value="${esc(s.id)}" ${f.sector === s.id ? "selected" : ""}>${esc(s.id)}</option>`).join("")}
-            </select>
-          </div>
-          <div class="field" style="min-width:170px">
-            <label for="sf-ga">Edad gestacional</label>
-            <select class="select" id="sf-ga">
-              <option value="all" ${f.gaGroup === "all" ? "selected" : ""}>Todas las EG</option>
-              <option value="<28" ${f.gaGroup === "<28" ? "selected" : ""}>&lt; 28 sem</option>
-              <option value="28-31" ${f.gaGroup === "28-31" ? "selected" : ""}>28–31+6 sem</option>
-              <option value="32-36" ${f.gaGroup === "32-36" ? "selected" : ""}>32–36+6 sem</option>
-              <option value=">=37" ${f.gaGroup === ">=37" ? "selected" : ""}>≥ 37 sem</option>
-            </select>
-          </div>
-          <div class="field" style="min-width:170px">
-            <label for="sf-wt">Peso al nacer</label>
-            <select class="select" id="sf-wt">
-              <option value="all" ${f.weightGroup === "all" ? "selected" : ""}>Todos los pesos</option>
-              <option value="<1000" ${f.weightGroup === "<1000" ? "selected" : ""}>&lt; 1.000 g</option>
-              <option value="<1500" ${f.weightGroup === "<1500" ? "selected" : ""}>&lt; 1.500 g</option>
-              <option value="1500-2499" ${f.weightGroup === "1500-2499" ? "selected" : ""}>1.500–2.499 g</option>
-              <option value=">=2500" ${f.weightGroup === ">=2500" ? "selected" : ""}>≥ 2.500 g</option>
-            </select>
-          </div>
-          <div class="field-hint" style="margin-left:auto;padding-bottom:6px">Cohorte filtrada: <strong class="num">${st.total} pacientes</strong></div>
+          <div class="field"><label for="sf-period">Período de ingreso</label>${sel("sf-period", "period", [["all", "Todo el registro"], ["30", "Últimos 30 días"], ["90", "Últimos 90 días"], ["custom", "Elegir fechas"]])}</div>
+          ${f.period === "custom" ? `
+            <div class="field"><label for="sf-from">Desde</label><input class="input" type="date" id="sf-from" data-sfilter="from" value="${esc(f.from || "")}" /></div>
+            <div class="field"><label for="sf-to">Hasta</label><input class="input" type="date" id="sf-to" data-sfilter="to" value="${esc(f.to || "")}" /></div>` : ""}
+          <div class="field"><label for="sf-outcome">Desenlace</label>${sel("sf-outcome", "outcome", [["all", "Todos"], ["internados", "Internados"], ["desenlace", "Con desenlace"], ["egresados", "Egresados vivos"], ["fallecidos", "Fallecidos"]])}</div>
+          <div class="field"><label for="sf-ga">Edad gestacional</label>${sel("sf-ga", "gaGroup", [["all", "Todas"], ["<28", "< 28 sem"], ["28-31", "28–31+6 sem"], ["32-36", "32–36+6 sem"], [">=37", "≥ 37 sem"]])}</div>
+          <div class="field"><label for="sf-wt">Peso al nacer</label>${sel("sf-wt", "weightGroup", [["all", "Todos"], ["<1000", "< 1.000 g"], ["<1500", "< 1.500 g"], ["1500-2499", "1.500–2.499 g"], [">=2500", "≥ 2.500 g"]])}</div>
+          <div class="field"><label for="sf-sector">Sector</label>${sel("sf-sector", "sector", [["all", "Todos"], ...DATA.SECTORS.map((s) => [s.id, s.name])])}</div>
+          <div class="field"><label for="sf-sex">Sexo</label>${sel("sf-sex", "sex", [["all", "Todos"], ["F", "Femenino"], ["M", "Masculino"]])}</div>
+          <div class="field"><label for="sf-origin">Procedencia</label>${sel("sf-origin", "origin", [["all", "Todas"], ["Intramuros", "Intramuros"], ["Derivado de otra institución", "Derivados"]])}</div>
+        </div>
+        <div class="stats-cohort">
+          <span>Cohorte: <strong class="num">${cohort.length}</strong> de ${state.patients.length} pacientes</span>
+          ${chips}
+          ${chips ? `<button class="link-btn" type="button" id="btn-stats-clear">Quitar todos los filtros</button>` : ""}
         </div>
       </section>
-
-      <section class="ledger-bar">
-        <div class="ledger-cell">
-          <div class="ledger-label">Mortalidad (desenlace conocido)</div>
-          <div class="ledger-value">${st.mortalityRate !== null ? `${st.mortalityRate}%` : "—"}</div>
-          <div class="ledger-sub">${st.deceased} fallecido(s) sobre ${st.knownOutcomeCount} con desenlace · ${st.stillHosp} aún internados aparte</div>
-        </div>
-        <div class="ledger-cell">
-          <div class="ledger-label">Bacteriemia / 1.000 días-catéter</div>
-          <div class="ledger-value is-teal">${st.clabsiRate1000 !== null ? st.clabsiRate1000 : "—"}</div>
-          <div class="ledger-sub">${st.clabsiEvents} evento(s) en ${st.totalCatheterDays} días-catéter</div>
-        </div>
-        <div class="ledger-cell">
-          <div class="ledger-label">NAV / 1.000 días-ventilador</div>
-          <div class="ledger-value is-teal">${st.navRate1000 !== null ? st.navRate1000 : "—"}</div>
-          <div class="ledger-sub">${st.navEvents} evento(s) en ${st.totalVentDays} días de VMC/VAFO</div>
-        </div>
-        <div class="ledger-cell">
-          <div class="ledger-label">LME exclusiva al alta</div>
-          <div class="ledger-value">${st.dischargedAliveCount ? `${Math.round((st.lmeAtDischarge / st.dischargedAliveCount) * 100)}%` : "—"}</div>
-          <div class="ledger-sub">${st.lmeAtDischarge} de ${st.dischargedAliveCount} egresos vivos · Estadía media ${st.avgStay ?? "—"} d</div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">Morbilidades</h2>
-            <p class="panel-sub">Los bebés fuera de riesgo no entran en la cuenta; los que tienen el dato pendiente se informan aparte</p>
-          </div>
-        </div>
-        <div class="panel-body tight">
-          <div class="table-wrap">
-            <table class="clinical-table">
-              <thead><tr><th>Indicador</th><th>Tasa (casos sobre bebés con el dato)</th><th>Cómo se compone</th></tr></thead>
-              <tbody>
-                ${morbidities.map(([lbl, m]) => triRow(lbl, m)).join("")}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-    `;
+      <div class="seg stats-seg" role="tablist" aria-label="Secciones de estadísticas">
+        ${STATS_TABS.map(([id, l]) => `<button class="seg-btn${tab === id ? " is-on" : ""}" type="button" role="tab" aria-selected="${tab === id}" data-stats-tab="${id}">${l}</button>`).join("")}
+      </div>
+      ${statsTabHtml(tab, cohort)}`;
   }
 
   // Diccionario de datos: variables del esquema + variables derivadas por el motor.
@@ -3103,12 +3282,30 @@
       };
     }
 
-    // Stats filters
-    ["sf-sector", "sf-ga", "sf-wt"].forEach((id) => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      const map = { "sf-sector": "sector", "sf-ga": "gaGroup", "sf-wt": "weightGroup" };
-      el.onchange = () => { ui.statsFilters[map[id]] = el.value; render(); };
+    // Filtros de Estadísticas (selectores y fechas)
+    main.querySelectorAll("[data-sfilter]").forEach((el) => {
+      el.onchange = () => {
+        ui.statsFilters[el.getAttribute("data-sfilter")] = el.value;
+        const id = el.id;
+        render();
+        const again = document.getElementById(id);
+        if (again) again.focus();
+      };
+    });
+    const csvBtn = document.getElementById("btn-stats-csv");
+    if (csvBtn) csvBtn.onclick = () => {
+      // Sin permiso de exportación completa, la cohorte sale sin nombre ni identificador.
+      const full = activeRole().permissions.exportFull;
+      const rows = statsPatientRows(statsCohort()).map((r, i) => (full ? r : Object.assign({}, r, { id: `P-${String(i + 1).padStart(3, "0")}`, name: "" })));
+      const head = ["id", "paciente", "eg", "peso", "sexo", "ingreso", "dias_internacion", "estado", "dbp", "sepsis_tardia", "nec"];
+      const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
+      const csv = [head.join(","), ...rows.map((r) => [r.id, r.name, r.ga, r.weight, r.sex, r.admit, r.days, r.status, r.dbp, r.late, r.nec].map(q).join(","))].join(String.fromCharCode(10));
+      downloadFile(`neosalud_cohorte_${ENG.REF_DATE}.csv`, String.fromCharCode(0xfeff) + csv, "text/csv;charset=utf-8");
+      logAudit("Descarga de cohorte (Estadísticas)", `${rows.length} pacientes`, full ? "CSV con identificación" : "CSV sin identificación");
+      toast(`CSV descargado con ${rows.length} paciente(s)${full ? "" : ", sin nombres (tu rol no exporta datos identificados)"}.`);
+    };
+    main.querySelectorAll("tr[data-he-goto]").forEach((tr) => {
+      tr.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); tr.click(); } };
     });
 
     // Export downloads (with brief mocked preparation spinner)
@@ -3243,6 +3440,17 @@
         el.scrollIntoView({ block: "center" });
         el.focus({ preventScroll: true });
       }
+      return;
+    }
+
+    // Estadísticas: secciones y filtros
+    const statsTab = t.closest("[data-stats-tab]");
+    if (statsTab) { ui.statsTab = statsTab.getAttribute("data-stats-tab"); render(); return; }
+    const chip = t.closest("[data-sfilter-clear]");
+    if (chip) { ui.statsFilters[chip.getAttribute("data-sfilter-clear")] = "all"; render(); return; }
+    if (t.closest("#btn-stats-clear")) {
+      ui.statsFilters = { period: "all", from: "", to: "", outcome: "all", sector: "all", gaGroup: "all", weightGroup: "all", sex: "all", origin: "all" };
+      render();
       return;
     }
 
@@ -3423,7 +3631,9 @@
     if (heGoto) {
       ui.selectedPatientId = heGoto.getAttribute("data-he-goto");
       ui.heTab = heGoto.getAttribute("data-he-goto-tab");
-      ui.heFilter = "activos";
+      // Un egresado no está en la lista de internados: se abre con el filtro que lo incluye.
+      const target = state.patients.find((x) => x.id === ui.selectedPatientId);
+      ui.heFilter = target && isActive(target) ? "activos" : "todos";
       navigate("he");
       return;
     }

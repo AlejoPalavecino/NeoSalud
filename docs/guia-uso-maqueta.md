@@ -110,8 +110,20 @@ Dos pestañas:
 
 ### 3.6 Estadísticas
 
-**Mostrar:** cada tasa con su denominador y la separación **Dato / Fuera de riesgo / Sin dato**. Con la cohorte demo: DBP 2/5 (40 %), mortalidad 9,1 % sobre desenlace conocido, sepsis precoz y tardía por separado, densidades por 1.000 días-catéter y días-ventilador. Filtrar por peso `< 1.500 g`.
-**Preguntar:** ¿estas son las tasas que informan a Jefatura y Dirección? ¿Falta alguna (ocupación y giro cama, mortalidad por franja de peso, hipotermia al ingreso)? ¿Qué población define el riesgo para HIV y DAP?
+Inicio da el pulso del día; Estadísticas es para analizar. Arriba, los **filtros**: período de ingreso (todo, últimos 30 o 90 días, o fechas elegidas), desenlace, edad gestacional, peso, sector, sexo y procedencia. La cohorte resultante se ve siempre («Cohorte: 11 de 30 pacientes») y cada filtro activo aparece como un chip que se quita con un clic.
+
+Siete secciones:
+
+- **Resumen:** mortalidad sobre desenlace conocido, densidades por 1.000 días-catéter y días-ventilador, lactancia exclusiva al alta y la tabla de morbilidades con la separación **Dato / Fuera de riesgo / Sin dato**.
+- **Población:** distribución por edad gestacional y peso, desenlace, sexo y procedencia, estadía de los egresados (media, mediana, mínima y máxima) e internados por sector.
+- **Respiratorio:** quién recibió cada soporte, días acumulados y mediana; surfactante; clasificación de DBP de Jensen.
+- **Infecciones:** sepsis precoz y tardía, IAAS por cuadro clínico, gérmenes y antibióticos más usados.
+- **Nutrición:** hitos (parenteral, inicio enteral, 100 cc/kg/día), ganancia de peso a los 28 días, alimentación al alta, NEC y perforación.
+- **Morbilidad por EG:** una tabla cruzada por grupo de edad gestacional (mortalidad, DBP, HIV III–IV, NEC, ROP grave, sepsis tardía y estadía).
+- **Pacientes:** la lista de la cohorte; cada fila abre al bebé en Hospitalización y epicrisis y se descarga en CSV (sin nombres para los roles que no exportan datos identificados).
+
+**Mostrar:** con la cohorte completa, DBP 2/5 (40 %) y mortalidad 9,1 %. Filtrar por peso `< 1.500 g` (11 pacientes, DBP 2/4) y después sumar «Últimos 30 días». Abrir *Morbilidad por EG*.
+**Preguntar:** ¿estas son las tasas que informan a Jefatura y Dirección? ¿Falta alguna (ocupación y giro cama, mortalidad por franja de peso, hipotermia al ingreso)? ¿Qué población define el riesgo para HIV y DAP? ¿Qué cortes de período usan (mensual, anual)?
 
 ### 3.7 Exportación
 
