@@ -9,7 +9,9 @@
     route: "unidad", // unidad | ingreso | hosp | epicrisis | importar | estadisticas | exportacion | configuracion
     unitSearch: "",
     selectedPatientId: state.patients[0]?.id || null,
-    hospTab: "respiratorio",
+    heTab: "resumen",         // pestaña de «Hospitalización y epicrisis»
+    heFilter: "activos",      // activos | egresados | todos
+    heSearch: "",
     patientFilters: { text: "", status: "all", sector: "all", gaGroup: "all" },
     ingresoVarFilter: "",
     collapsedSections: {},
@@ -58,16 +60,63 @@
   }
 
   function loadState() {
+    let st = null;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && parsed.version === DATA.STATE_VERSION && Array.isArray(parsed.patients)) {
-          return parsed;
-        }
+        if (parsed && parsed.version === DATA.STATE_VERSION && Array.isArray(parsed.patients)) st = parsed;
       }
     } catch (e) { /* fallback to seed */ }
-    return DATA.createSeedState();
+    st = st || DATA.createSeedState();
+    st.patients.forEach(fillDerivedAnswers);
+    return st;
+  }
+
+  // Las preguntas de la v2 (relevadas de la referencia) se completan a partir de lo que cada
+  // paciente ya tiene cargado. Solo se escribe donde todavía no hay respuesta.
+  function fillDerivedAnswers(p) {
+    const h = p.hosp || (p.hosp = {});
+    const d = p.discharge || (p.discharge = {});
+    const set = (obj, key, val) => { if (obj[key] === undefined) obj[key] = val; };
+    const yn = (cond) => (cond ? "Sí" : "No");
+    const ga = Number(p.gaWeeks);
+    const bw = Number(p.birthWeight);
+    const alive = d.condition && d.condition !== "Fallecido";
+    const caths = (h.catheters || []).map((c) => c.type);
+
+    set(h, "surfactant", h.surfactantDoses ? "Sí" : h.sdr ? "No" : "");
+    set(h, "iaas", yn((h.iaasEpisodes || []).length));
+    set(h, "npt", (h.nutrEvents || []).length ? yn(h.nutrEvents.some((e) => e.route === "Parenteral")) : "");
+    set(h, "transfusionNeeded", yn((h.transfusions || []).length));
+    set(h, "surgeryDuring", yn((h.surgeries || []).length));
+    set(h, "phototherapy", ga ? yn(ga < 35) : "");
+    set(h, "hypoglycemia", bw ? yn(bw < 1800) : "");
+    set(h, "thrombocytopenia", yn((h.transfusions || []).some((t) => /plaqueta/i.test(t.component))));
+    set(h, "coombs", "Negativo");
+    if (ga < 32 || bw < 1500) set(h, "ropScreening", (h.ropExams || []).length ? "Sí" : "");
+    h.access = h.access || {};
+    [["cvu", "CVU"], ["cau", "CAU"], ["picc", "PICC"], ["cvc", "CVC"]].forEach(([k, t]) => set(h.access, k, yn(caths.includes(t))));
+    h.neuro = h.neuro || {};
+    const n = h.neuro;
+    if (n.usDone === undefined && n.cranialUs) {
+      n.usDone = n.cranialUs === "No realizada" ? "No" : "Sí";
+      n.cranialUs = n.cranialUs === "No realizada" ? "" : n.cranialUs === "Normal" ? "Sin hallazgos" : n.cranialUs;
+    }
+    if (n.mriDone === undefined && n.mri) {
+      n.mriDone = n.mri === "No realizada" ? "No" : "Sí";
+      n.mri = n.mri === "No realizada" ? "" : n.mri === "Normal" ? "Sin hallazgos" : n.mri;
+    }
+    if (h.cardio && h.cardio.dapInvasive === "Cierre percutáneo") h.cardio.dapInvasive = "Cierre percutáneo (cateterismo)";
+    // DBP a las 36 semanas: se evalúa si llegó internado a esa edad corregida.
+    if (ga && ga < 36 && h.dbpEval36 === undefined) {
+      const pma = ga + ENG.getPatientStayDays(p) / 7;
+      h.dbpEval36 = pma >= 36 ? "Sí" : isActive(p) ? "" : "No evaluable";
+    }
+    if (alive) {
+      set(d, "healthStatus", d.homeO2 === "Sí" || ga < 32 ? "Con patología en seguimiento" : "Sano");
+      set(d, "requiresMeds", yn(d.medications));
+    }
   }
 
   function saveState() {
@@ -150,11 +199,18 @@
   }
 
   function isPatientRoute(r) {
-    return r === "ingreso" || r === "hosp" || r === "epicrisis";
+    return r === "ingreso";
   }
 
   function navigate(route, patientId) {
     if (patientId) ui.selectedPatientId = patientId;
+    // Internación y egreso viven en la sección «Hospitalización y epicrisis».
+    if (route === "hosp" || route === "epicrisis") {
+      ui.heTab = route === "epicrisis" ? "epicrisis" : "resumen";
+      const p = activePatient();
+      if (p && !isActive(p) && ui.heFilter === "activos") ui.heFilter = "todos";
+      route = "he";
+    }
     ui.route = route === "inicio" || route === "pacientes" ? "unidad" : route;
     closeDrawer();
     render();
@@ -188,14 +244,19 @@
   function renderNav() {
     const activeCount = state.patients.filter((p) => p.status === "hospitalizado" || p.status === "ingreso_incompleto").length;
     const pendingImport = ui.activeBatch ? ui.activeBatch.rows.filter((r) => r.decision === "pending").length : 0;
-    // Cinco destinos. La historia de cada bebé se abre desde Unidad (no hay ítems de paciente sueltos).
+    const unsignedAdm = state.patients.filter((p) => p.status === "ingreso_incompleto" || (isActive(p) && !p.admissionDraft.validated)).length;
+    const r = activeRole();
+    // Accesos por tarea (docs/08 §2). Administración solo para quien administra usuarios.
     const items = [
-      { id: "unidad", label: "Unidad", icon: "home", count: activeCount, hint: "cunas ocupadas" },
-      { id: "estadisticas", label: "Estadísticas", icon: "chart", count: null },
+      { id: "unidad", label: "Inicio", icon: "home", count: activeCount, hint: "internados" },
+      { id: "ingresos", label: "Ingreso", icon: "clipboard", count: unsignedAdm || null, hint: "ingresos sin firmar" },
+      { id: "he", label: "Hospitalización y epicrisis", icon: "activity", count: null },
       { id: "importar", label: "Importar datos", icon: "upload", count: pendingImport || null, hint: "filas por revisar" },
+      { id: "estadisticas", label: "Estadísticas", icon: "chart", count: null },
       { id: "exportacion", label: "Exportar", icon: "download", count: null },
-      { id: "configuracion", label: "Administración", icon: "settings", count: null }
-    ];
+      { id: "configuracion", label: "Configuración", icon: "settings", count: null },
+      r.permissions.admin ? { id: "admin", label: "Administración", icon: "users", count: null } : null
+    ].filter(Boolean);
     const current = navSection(ui.route);
     document.getElementById("rail-nav").innerHTML = items.map((it) => `
       <button class="nav-item ${current === it.id ? "active" : ""}" type="button" data-nav="${it.id}" ${current === it.id ? 'aria-current="page"' : ""}>
@@ -205,9 +266,10 @@
     `).join("");
   }
 
-  // La historia de un paciente pertenece a la sección Unidad.
+  // La ficha de ingreso de un paciente pertenece a la sección Ingreso.
   function navSection(route) {
-    return isPatientRoute(route) || route === "inicio" || route === "pacientes" ? "unidad" : route;
+    if (isPatientRoute(route)) return "ingresos";
+    return route === "inicio" || route === "pacientes" ? "unidad" : route;
   }
 
   function renderTopbar() {
@@ -217,15 +279,18 @@
     document.getElementById("role-label").textContent = r.roleLabel;
 
     const titles = {
-      unidad: "Unidad",
+      unidad: "Inicio",
+      ingresos: "Ingreso",
+      he: "Hospitalización y epicrisis",
       importar: "Importar datos",
       estadisticas: "Estadísticas",
       exportacion: "Exportar",
-      configuracion: "Administración"
+      configuracion: "Configuración",
+      admin: "Administración"
     };
     const p = activePatient();
     const crumb = isPatientRoute(ui.route) && p
-      ? `<button class="crumb-link" type="button" data-nav="unidad">Unidad</button><span aria-hidden="true">/</span><strong>${esc(p.fullName)}</strong>`
+      ? `<button class="crumb-link" type="button" data-nav="ingresos">Ingreso</button><span aria-hidden="true">/</span><strong>${esc(p.fullName)}</strong>`
       : `<strong>${esc(titles[navSection(ui.route)] || "NeoSalud")}</strong>`;
     document.getElementById("breadcrumb").innerHTML = crumb;
   }
@@ -452,7 +517,18 @@
     const dataAttr = `data-sfield="${f.key}"`;
     const dis = canEdit ? "" : "disabled";
     let control;
-    if (f.type === "select") {
+    if (f.type === "yesno") {
+      // No · Sí como botones (un clic) y el resto de respuestas en un selector aparte.
+      const other = SCHEMA.YESNO_OTHER.includes(v);
+      const seg = (val) => `<button class="yn-btn${v === val ? " is-on" : ""}" type="button" data-yn="${f.key}" data-yn-val="${val}" aria-pressed="${v === val}" ${dis}>${val}</button>`;
+      control = `<div class="yn" role="group" aria-labelledby="${id}-lab">
+        ${seg("No")}${seg("Sí")}
+        <select class="select yn-other${other ? " is-on" : ""}" id="${id}" ${dataAttr} aria-label="${esc(f.label)}: otra respuesta" ${dis}>
+          <option value="${other ? "" : esc(v)}">${other ? "Quitar" : "Otra…"}</option>
+          ${SCHEMA.YESNO_OTHER.map((o) => `<option value="${o}" ${o === v ? "selected" : ""}>${o}</option>`).join("")}
+        </select>
+      </div>`;
+    } else if (f.type === "select") {
       const opts = optionPairs(f);
       // Un valor cargado que no está en la lista (dato importado o de otra versión) se muestra igual.
       if (v !== "" && !opts.some(([val]) => String(val) === String(v))) opts.push([v, `${v} (valor cargado)`]);
@@ -477,7 +553,8 @@
       : "";
     const mark = parent ? `<span class="branch-mark" aria-hidden="true">↳</span>` : "";
     const wide = f.type === "textarea" ? " field-wide" : "";
-    return `<div class="field${v === "" ? " is-empty" : ""}${wide}${branch}"><label for="${id}">${mark}${esc(f.label)}${badge}</label>${control}</div>`;
+    const help = f.help ? `<span class="field-hint">${esc(f.help)}</span>` : "";
+    return `<div class="field${v === "" ? " is-empty" : ""}${wide}${branch}"><label for="${id}" id="${id}-lab">${mark}${esc(f.label)}${badge}</label>${control}${help}</div>`;
   }
 
   function schemaSectionHtml(sec, p, canEdit, ctx) {
@@ -696,7 +773,7 @@
           ${draftVersionsHtml("admission", p.admissionDraft)}
 
           ${hasPlaceholders && !admSigned ? `
-            <div class="banner banner-warn">Quedan campos pendientes (<span class="mono">_____</span>) en el examen físico. Completalos antes de validar el ingreso.</div>
+            <div class="banner banner-warn"><div>Quedan campos pendientes (<span class="mono">_____</span>) en el examen físico. Completalos antes de validar el ingreso.</div></div>
           ` : ""}
 
           <div class="draft-sheet">
@@ -731,7 +808,8 @@
   }
 
   // ===================== VIEW 4: HOSPITALIZACIÓN =====================
-  function viewHosp() {
+  // Paneles de cronología de cada sistema (se insertan en las pestañas de «Hospitalización y epicrisis»).
+  function hospPanelsHtml(tabArg) {
     const p = activePatient();
     if (!p) return `<div class="empty-state"><strong>Sin paciente seleccionado</strong></div>`;
     const r = activeRole();
@@ -741,17 +819,9 @@
     const cath = ENG.deriveCatheters(p);
     const rop = ENG.deriveRopWorst(p);
 
-    const tabs = [
-      ["respiratorio", `Respiratorio (${resp.eventCount})`],
-      ["nutricion", `Nutrición y Digestivo (${(p.hosp.nutrEvents || []).length})`],
-      ["infeccioso", `Infeccioso / IAAS (${(p.hosp.iaasEpisodes || []).length})`],
-      ["cateteres", `Accesos Vasculares (${cath.count})`],
-      ["transfusiones", `Transfusiones (${(p.hosp.transfusions || []).length})`],
-      ["otros", "Cardio · Neuro · ROP · Cirugía"]
-    ];
 
     let tabHtml = "";
-    if (ui.hospTab === "respiratorio") {
+    if (tabArg === "respiratorio") {
       const modClass = (m) => {
         if (m === "VAFO" || m === "VMC" || m === "ECMO") return "mod-high";
         if (m === "CPAP" || m === "NIPPV" || m === "BiPAP" || m === "CNAF") return "mod-mid";
@@ -775,7 +845,7 @@
             </div>
           </div>
           <div class="panel-body">
-            ${!resp.complete ? `<div class="banner banner-warn">Cronología marcada como <strong>Incompleta</strong>: el sistema evita deducir un «No» falso y reporta deuda de registro en Estadísticas hasta confirmar el corte.</div>` : ""}
+            ${!resp.complete ? `<div class="banner banner-warn"><div>Cronología marcada como <strong>incompleta</strong>: el sistema no deduce un «No» que podría ser falso y la cuenta como deuda de registro en Estadísticas hasta que confirmes el corte.</div></div>` : ""}
 
             <div class="derived-strip">
               <div class="derived-item"><span class="derived-label">Días de O2</span><span class="derived-val">${resp.totals.o2} d</span></div>
@@ -805,15 +875,10 @@
               </div>
             ` : `<div class="empty-state"><strong>Sin cambios respiratorios cargados</strong>Agregá el evento inicial de soporte para derivar los totales.</div>`}
 
-            <div class="form-grid" style="margin-top:12px">
-              <div class="derived-item"><span class="derived-label">SDR</span><span class="derived-val">${esc(p.hosp.sdr || "Sin responder")}</span></div>
-              <div class="derived-item"><span class="derived-label">Surfactante</span><span class="derived-val">${p.hosp.surfactantDoses ? `${p.hosp.surfactantDoses} dosis (${p.hosp.surfactantHours}h · ${p.hosp.surfactantRoute})` : "No"}</span></div>
-              <div class="derived-item"><span class="derived-label">Neumotórax</span><span class="derived-val">${esc(p.hosp.pneumothorax || "Sin responder")}</span></div>
-            </div>
           </div>
         </section>
       `;
-    } else if (ui.hospTab === "nutricion") {
+    } else if (tabArg === "nutricion") {
       const sorted = [...(p.hosp.nutrEvents || [])].sort((a, b) => a.day - b.day);
       tabHtml = `
         <section class="panel">
@@ -859,7 +924,7 @@
           </div>
         </section>
       `;
-    } else if (ui.hospTab === "infeccioso") {
+    } else if (tabArg === "infeccioso") {
       tabHtml = `
         <section class="panel">
           <div class="panel-head">
@@ -897,7 +962,7 @@
           </div>
         </section>
       `;
-    } else if (ui.hospTab === "cateteres") {
+    } else if (tabArg === "cateteres") {
       tabHtml = `
         <section class="panel">
           <div class="panel-head">
@@ -939,7 +1004,7 @@
           </div>
         </section>
       `;
-    } else if (ui.hospTab === "transfusiones") {
+    } else if (tabArg === "transfusiones") {
       tabHtml = `
         <section class="panel">
           <div class="panel-head">
@@ -969,10 +1034,8 @@
           </div>
         </section>
       `;
-    } else {
+    } else if (tabArg === "rop") {
       tabHtml = `
-        ${hospSchemaHtml(p, canEdit, "otros")}
-        <div>
           <section class="panel">
             <div class="panel-head">
               <div>
@@ -992,8 +1055,9 @@
               </table>
             </div>
           </section>
-        </div>
-
+      `;
+    } else if (tabArg === "cirugias") {
+      tabHtml = `
         <section class="panel">
           <div class="panel-head"><h2 class="panel-title">Procedimientos quirúrgicos (${(p.hosp.surgeries || []).length})</h2></div>
           <div class="panel-body tight">
@@ -1010,30 +1074,229 @@
       `;
     }
 
+    return tabHtml;
+  }
+
+
+  // ===================== HOSPITALIZACIÓN Y EPICRISIS (docs/08 §3) =====================
+  // Una pestaña por sistema. «panels» son las cronologías del sistema; «panelWhen» la pregunta
+  // que las habilita (como en la referencia: con «Sí» aparece el registro de episodios).
+  const HE_TABS = [
+    { id: "resumen", label: "Resumen" },
+    { id: "respiratorio", label: "Respiratorio", panels: ["respiratorio"], panelsFirst: true },
+    { id: "cardio", label: "Cardiovascular" },
+    { id: "infeccioso", label: "Infeccioso", panels: ["infeccioso"], panelWhen: "iaas" },
+    { id: "nutricion", label: "Nutrición y crecimiento", panels: ["nutricion"], panelsFirst: true },
+    { id: "prematurez", label: "Prematurez", applies: "preterm", panels: ["rop"], panelWhen: "ropScreening" },
+    { id: "neuro", label: "Neurológico" },
+    { id: "hemato", label: "Hematología", panels: ["transfusiones"], panelWhen: "transfusionNeeded" },
+    { id: "accesos", label: "Accesos vasculares", panels: ["cateteres"] },
+    { id: "procedimientos", label: "Procedimientos", panels: ["cirugias"], panelWhen: "surgeryDuring" },
+    { id: "epicrisis", label: "Epicrisis y egreso" }
+  ];
+
+  // Contexto clínico en que una sección o pestaña existe.
+  function appliesTo(p, ctx) {
+    if (!ctx) return true;
+    const ga = ENG.num(p.gaWeeks);
+    const bw = ENG.num(p.birthWeight);
+    // DBP: nació antes de las 36 sem y ya llegó (o egresó) a esa edad corregida.
+    if (ctx === "lt36") return ga !== null && ga < 36 && (!isActive(p) || ga + ENG.getPatientStayDays(p) / 7 >= 36);
+    if (ctx === "preterm") return (ga !== null && ga < 32) || (bw !== null && bw < 1500);
+    return true;
+  }
+
+  function tabSections(p, tabId) {
+    if (tabId === "epicrisis") return SCHEMA.DISCHARGE_SECTIONS;
+    return SCHEMA.HOSP_SECTIONS.filter((s) => s.tab === tabId && appliesTo(p, s.applies));
+  }
+
+  // Cuántas preguntas visibles quedan sin responder en una pestaña.
+  // Solo cuentan las variables núcleo (las «A confirmar» son propuestas) y el egreso de un
+  // internado todavía no está pendiente.
+  function tabProgress(p, tabId) {
+    if (tabId === "epicrisis" && isActive(p)) return { total: 0, missing: 0, later: true };
+    const fields = tabSections(p, tabId).flatMap((s) => s.fields).filter((f) => f.core && SCHEMA.conditionMet(p, f));
+    const filled = fields.filter((f) => SCHEMA.readField(p, f) !== "").length;
+    return { total: fields.length, missing: fields.length - filled };
+  }
+
+  function hePatients() {
+    const q = fold(ui.heSearch);
+    return state.patients
+      .filter((p) => ui.heFilter === "todos" || (ui.heFilter === "activos" ? isActive(p) : !isActive(p)))
+      .filter((p) => !q || fold(`${p.fullName} ${p.hc || ""} ${p.id}`).includes(q))
+      .sort((a, b) => (isActive(b) - isActive(a)) || String(a.fullName).localeCompare(b.fullName));
+  }
+
+  function respCurrent(p) {
+    const ev = [...(p.hosp.respEvents || [])].sort((a, b) => a.day - b.day);
+    return ev.length ? ev[ev.length - 1].modality : null;
+  }
+
+  function viewHE() {
+    const list = hePatients();
+    let p = activePatient();
+    if (p && !list.includes(p) && list.length) { p = list[0]; ui.selectedPatientId = p.id; }
+    const r = activeRole();
+    const counts = {
+      activos: state.patients.filter(isActive).length,
+      egresados: state.patients.filter((x) => !isActive(x)).length,
+      todos: state.patients.length
+    };
+    const listHtml = `
+      <aside class="he-list" aria-label="Pacientes">
+        <div class="he-list-head">
+          <input class="input" id="he-search" type="search" placeholder="Buscar por nombre o HC" value="${esc(ui.heSearch)}" aria-label="Buscar paciente" />
+          <div class="seg" role="group" aria-label="Filtrar pacientes">
+            ${[["activos", "Internados"], ["egresados", "Egresados"], ["todos", "Todos"]].map(([id, lab]) => `
+              <button class="seg-btn${ui.heFilter === id ? " is-on" : ""}" type="button" data-he-filter="${id}" aria-pressed="${ui.heFilter === id}"><span>${lab}</span><span class="seg-count num">${counts[id]}</span></button>`).join("")}
+          </div>
+        </div>
+        <div class="he-items">
+          ${list.length ? list.map((x) => {
+            const dol = dayOfLife(x);
+            const pend = HE_TABS.filter((t) => t.id !== "resumen" && appliesTo(x, t.applies)).reduce((a, t) => a + tabProgress(x, t.id).missing, 0);
+            return `
+            <button class="he-item${p && x.id === p.id ? " is-on" : ""}" type="button" data-he-patient="${esc(x.id)}" ${p && x.id === p.id ? 'aria-current="true"' : ""}>
+              <span class="he-item-name">${esc(x.fullName)}</span>
+              <span class="he-item-meta">${esc(ENG.fmtGa(x.gaWeeks, x.gaDays))} sem · ${esc(ENG.fmtWeight(x.birthWeight, "—"))}${isActive(x) && dol !== null ? ` · día ${dol}` : ""}</span>
+              <span class="he-item-foot">${statusBadge(x.status)}${pend ? `<span class="he-pend">${pend} sin responder</span>` : ""}</span>
+            </button>`;
+          }).join("") : `<p class="empty-state">Ningún paciente coincide.</p>`}
+        </div>
+        ${r.permissions.createPatient ? `<button class="btn btn-secondary he-new" type="button" id="btn-new-patient">Nuevo ingreso rápido</button>` : ""}
+      </aside>`;
+
+    if (!p) return `<div class="he">${listHtml}<section class="he-main"><div class="empty-state"><strong>Elegí un paciente</strong></div></section></div>`;
+
+    const tab = HE_TABS.find((t) => t.id === ui.heTab) || HE_TABS[0];
+    const dol = dayOfLife(p);
+    const facts = [
+      `${ENG.fmtGa(p.gaWeeks, p.gaDays)} semanas`,
+      ENG.fmtWeight(p.birthWeight, "peso sin dato"),
+      dol === null ? null : isActive(p) ? `día ${dol} de vida` : `${ENG.getPatientStayDays(p)} días internado`,
+      isActive(p) && p.sector ? sectorName(p.sector) : null
+    ].filter(Boolean);
+
+    const tabsHtml = HE_TABS.map((t) => {
+      const na = !appliesTo(p, t.applies);
+      const prog = t.id === "resumen" || na ? null : tabProgress(p, t.id);
+      const badge = na ? `<span class="tab-na">no aplica</span>`
+        : prog && prog.later ? `<span class="tab-na">al alta</span>`
+        : prog && prog.missing ? `<span class="tab-pend num" title="${prog.missing} sin responder">${prog.missing}</span>`
+        : prog && prog.total ? `<span class="tab-ok" aria-label="completo">✓</span>` : "";
+      return `<button class="he-tab${t.id === tab.id ? " is-on" : ""}${na ? " is-na" : ""}" type="button" role="tab" aria-selected="${t.id === tab.id}" data-he-tab="${t.id}">${esc(t.label)}${badge}</button>`;
+    }).join("");
+
+    return `
+      <div class="he">
+        ${listHtml}
+        <section class="he-main">
+          <header class="he-head">
+            <div class="he-head-id">
+              <h1 class="he-title">${esc(p.fullName)}</h1>
+              ${statusBadge(p.status)}
+            </div>
+            <p class="he-facts">${facts.map(esc).join(" · ")} <span class="mono">${esc(p.hc || p.id)}</span></p>
+            <div class="he-head-actions">
+              <button class="btn btn-ghost btn-sm" type="button" data-open-patient="${esc(p.id)}" data-target-route="ingreso">Ficha de ingreso</button>
+            </div>
+          </header>
+          <nav class="he-tabs" role="tablist" aria-label="Sistemas">${tabsHtml}</nav>
+          <div class="he-body" role="tabpanel">${heTabHtml(p, tab)}</div>
+        </section>
+      </div>`;
+  }
+
+  function heTabHtml(p, tab) {
+    const canEdit = activeRole().permissions.editClinical;
+    if (tab.id === "resumen") return heSummaryHtml(p);
+    if (tab.id === "epicrisis") return viewEpicrisis();
+    if (!appliesTo(p, tab.applies)) {
+      return `<div class="empty-state"><strong>No aplica a este paciente</strong>Se registra en menores de 32 semanas o de 1.500 g; nació con ${esc(ENG.fmtGa(p.gaWeeks, p.gaDays))} semanas y ${esc(ENG.fmtWeight(p.birthWeight, "peso sin dato"))}.</div>`;
+    }
+    const questions = tabSections(p, tab.id).map((sec) => schemaSectionHtml(sec, p, canEdit, {})).join("");
+    const showPanels = tab.panels && (!tab.panelWhen || p.hosp[tab.panelWhen] === "Sí");
+    const panels = showPanels ? tab.panels.map(hospPanelsHtml).join("") : "";
+    return tab.panelsFirst ? panels + questions : questions + panels;
+  }
+
+  function heSummaryHtml(p) {
+    const resp = ENG.deriveRespiratory(p);
+    const nutr = ENG.deriveNutrition(p);
+    const cath = ENG.deriveCatheters(p);
+    const rop = ENG.deriveRopWorst(p);
+    const h = p.hosp;
+    const val = (v, alt = "sin responder") => (v === "" || v === undefined || v === null ? alt : v);
+    const facts = {
+      respiratorio: [`Soporte ${isActive(p) ? "actual" : "al egreso"}: ${val(respCurrent(p), "sin registro")}`, `Oxígeno ${resp.totals.o2} d · VMC ${resp.totals.vmc} d`, `DBP (Jensen): ${resp.jensen}`],
+      cardio: [`Ecocardiograma: ${val(h.cardio && h.cardio.echo)}`, `Ductus: ${val(h.cardio && h.cardio.dap)}${h.cardio && h.cardio.dapMed && h.cardio.dapMed !== "No" ? ` · ${h.cardio.dapMed}` : ""}`],
+      infeccioso: [`Sepsis precoz: ${val(h.earlySepsis)}`, `IAAS: ${(h.iaasEpisodes || []).length} episodio(s)`],
+      nutricion: [`Parenteral: ${nutr.nptDays} d`, `100 cc/kg/día: ${nutr.day100cc !== null ? `día ${nutr.day100cc}` : "aún no"}`, `NEC: ${val(h.nec)}`],
+      prematurez: [`ROP: ${rop.summary}`, `Quincenales: ${val(h.biweeklyLabs)}`],
+      neuro: [`Ecografía: ${val(h.neuro && h.neuro.cranialUs, h.neuro && h.neuro.usDone === "No" ? "no realizada" : "sin responder")}`, `Apneas: ${val(h.neuro && h.neuro.apnea)}`],
+      hemato: [`Transfusiones: ${(h.transfusions || []).length}`, `Fototerapia: ${val(h.phototherapy)}`],
+      accesos: [`${cath.count} catéter(es) · ${cath.totalDays} días-catéter`],
+      procedimientos: [`Cirugías: ${(h.surgeries || []).length}`],
+      epicrisis: [p.epicrisisDraft.validated ? "Epicrisis firmada" : isActive(p) ? "Se completa al dar el alta" : "Epicrisis sin firmar", p.discharge.condition ? `Condición: ${p.discharge.condition}` : null].filter(Boolean)
+    };
+    const alerts = [];
+    if (!resp.complete && ENG.num(p.gaWeeks) !== null) alerts.push(["Cronología respiratoria abierta", "respiratorio"]);
+    if (!isActive(p) && !p.epicrisisDraft.validated) alerts.push(["Epicrisis sin firmar", "epicrisis"]);
+    return `
+      ${alerts.length ? `<div class="he-alerts">${alerts.map(([t, id]) => `<button class="he-alert" type="button" data-he-tab="${id}">${esc(t)} <span aria-hidden="true">→</span></button>`).join("")}</div>` : ""}
+      <div class="he-cards">
+        ${HE_TABS.filter((t) => t.id !== "resumen").map((t) => {
+          const na = !appliesTo(p, t.applies);
+          const prog = na ? null : tabProgress(p, t.id);
+          const st = na ? ["No aplica", "na"] : prog.later ? ["Al alta", "na"] : prog.missing ? [`${prog.missing} sin responder`, "warn"] : ["Completo", "ok"];
+          return `
+          <button class="he-card${na ? " is-na" : ""}" type="button" data-he-tab="${t.id}">
+            <span class="he-card-head"><strong>${esc(t.label)}</strong><span class="status-pill status-${st[1]}">${esc(st[0])}</span></span>
+            ${na ? "" : `<span class="he-card-facts">${(facts[t.id] || []).map((x) => `<span>${esc(x)}</span>`).join("")}</span>`}
+          </button>`;
+        }).join("")}
+      </div>`;
+  }
+
+  // ===================== INGRESO (sección; la versión completa llega en el corte 3) =====================
+  function viewIngresos() {
+    const r = activeRole();
+    const pending = state.patients.filter((p) => p.status === "ingreso_incompleto" || (isActive(p) && !p.admissionDraft.validated));
+    const recent = state.patients.filter(isActive).filter((p) => !pending.includes(p)).slice(0, 8);
+    const row = (p, note) => `
+      <button class="he-item" type="button" data-open-patient="${esc(p.id)}" data-target-route="ingreso">
+        <span class="he-item-name">${esc(p.fullName)}</span>
+        <span class="he-item-meta">${esc(ENG.fmtGa(p.gaWeeks, p.gaDays))} sem · ${esc(ENG.fmtWeight(p.birthWeight, "—"))} · ${esc(note)}</span>
+      </button>`;
     return `
       <div class="page-header">
         <div>
-          <p class="step-lead">Registrá solo los cambios (por ejemplo, de CPAP a cánula). Los días, totales y clasificaciones se calculan solos.</p>
+          <h1 class="page-title">Ingreso</h1>
+          <p class="step-lead">El ingreso rápido abre la cuna con los datos mínimos; la ficha completa se termina después y se firma.</p>
         </div>
-
+        <div class="page-actions">
+          ${r.permissions.createPatient ? `<button class="btn btn-primary" type="button" id="btn-new-patient">Ingreso rápido</button>` : ""}
+        </div>
       </div>
-
-      <div class="system-tabs" role="tablist">
-        ${tabs.map(([id, label]) => `
-          <button class="sys-tab ${ui.hospTab === id ? "active" : ""}" type="button" data-hosp-tab="${id}">${esc(label)}</button>
-        `).join("")}
-      </div>
-
-      ${tabHtml}
-
-      ${ui.hospTab === "otros" ? "" : hospSchemaHtml(p, canEdit, ui.hospTab)}
-    `;
+      <div class="ing-grid">
+        <section class="panel"><div class="panel-head"><div><h2 class="panel-title">Fichas por completar o firmar</h2><p class="panel-sub">${pending.length} ingreso(s)</p></div></div>
+          <div class="panel-body he-items">${pending.length ? pending.map((p) => row(p, p.status === "ingreso_incompleto" ? "ingreso incompleto" : "sin firmar")).join("") : `<p class="empty-state">No hay ingresos pendientes.</p>`}</div></section>
+        <section class="panel"><div class="panel-head"><div><h2 class="panel-title">Ingresos firmados de internados</h2><p class="panel-sub">Para consultar o enmendar</p></div></div>
+          <div class="panel-body he-items">${recent.map((p) => row(p, "firmado")).join("")}</div></section>
+      </div>`;
   }
 
-  function hospSchemaHtml(p, canEdit, tab) {
-    return SCHEMA.HOSP_SECTIONS.filter((sec) => sec.tab === tab)
-      .map((sec) => schemaSectionHtml(sec, p, canEdit, {}))
-      .join("");
+  // ===================== ADMINISTRACIÓN (usuarios y permisos; el alta de usuarios llega en el corte 3) =====================
+  function viewAdmin() {
+    const perms = [["createPatient", "Crear pacientes"], ["editClinical", "Editar datos clínicos"], ["signDraft", "Firmar ingreso y epicrisis"], ["importFiles", "Importar datos"], ["exportFull", "Exportar base completa"], ["admin", "Administrar usuarios"]];
+    return `
+      <div class="page-header"><div><h1 class="page-title">Administración</h1><p class="step-lead">Usuarios del servicio y qué puede hacer cada rol.</p></div></div>
+      <section class="panel"><div class="panel-body tight"><div class="table-wrap"><table class="clinical-table">
+        <thead><tr><th>Usuario</th><th>Rol</th>${perms.map(([, l]) => `<th>${esc(l)}</th>`).join("")}</tr></thead>
+        <tbody>${DATA.ROLES.map((u) => `<tr><td><strong>${esc(u.name)}</strong><br><span class="mono field-hint">${esc(u.matricula)}</span></td><td>${esc(u.roleLabel)}</td>${perms.map(([k]) => `<td>${u.permissions[k] ? '<span class="status-pill status-ok">Sí</span>' : '<span class="status-pill status-na">No</span>'}</td>`).join("")}</tr>`).join("")}</tbody>
+      </table></div></div></section>`;
   }
 
   // ===================== VIEW 5: EPICRISIS =====================
@@ -1084,7 +1347,7 @@
           ` : ""}
 
           ${!epiSigned && epiMissing.length ? `
-            <div class="banner banner-warn">Antes de validar falta: ${epiMissing.map(esc).join(" · ")}.</div>
+            <div class="banner banner-warn"><div>Antes de validar falta: ${epiMissing.map(esc).join(" · ")}.</div></div>
           ` : ""}
 
           ${draftVersionsHtml("epicrisis", p.epicrisisDraft)}
@@ -1983,8 +2246,9 @@
       inicio: viewUnidad,
       pacientes: viewUnidad,
       ingreso: viewIngreso,
-      hosp: viewHosp,
-      epicrisis: viewEpicrisis,
+      ingresos: viewIngresos,
+      he: viewHE,
+      admin: viewAdmin,
       importar: viewImportar,
       estadisticas: viewEstadisticas,
       exportacion: viewExportacion,
@@ -2197,6 +2461,18 @@
   }
 
   // ===================== EVENT BINDING =====================
+  // Cero datos huérfanos: si la respuesta cerró una rama condicional, se descartan
+  // todos sus subcampos con valor y el descarte queda en la bitácora de auditoría.
+  function closeOrphanBranches(p, key, val) {
+    const discarded = SCHEMA.discardClosedBranches(p);
+    if (!discarded.length) return;
+    const parent = SCHEMA.FIELD_BY_KEY[key];
+    const branchName = parent ? parent.label : key;
+    const detail = discarded.map((d) => `${d.label}: ${d.value}`).join(", ");
+    logAudit(`Descarte de rama «${branchName}»`, `${p.id} (${p.fullName})`, `Respuesta cambiada a «${val === "" ? "Sin responder" : val}» · Subcampos descartados: ${detail}`);
+    toast(`Rama «${branchName}» cerrada: ${discarded.length} subcampo(s) descartado(s) y registrado(s) en auditoría.`);
+  }
+
   function bindViewEvents() {
     const main = document.getElementById("main");
 
@@ -2207,6 +2483,17 @@
         ui.selectedPatientId = ps.value;
         ui.dxSearch = "";
         render();
+      };
+    }
+
+    // Hospitalización y epicrisis: búsqueda en la lista de pacientes
+    const heSearch = document.getElementById("he-search");
+    if (heSearch) {
+      heSearch.oninput = () => {
+        ui.heSearch = heSearch.value;
+        render();
+        const again = document.getElementById("he-search");
+        if (again) { again.focus(); again.setSelectionRange(ui.heSearch.length, ui.heSearch.length); }
       };
     }
 
@@ -2280,18 +2567,7 @@
           if (df === "date") p.dischargeDate = val;
         }
 
-        // Cero datos huérfanos: si la respuesta cerró una rama condicional, se descartan
-        // todos sus subcampos con valor y el descarte queda en la bitácora de auditoría.
-        if (sf || pf || af) {
-          const discarded = SCHEMA.discardClosedBranches(p);
-          if (discarded.length) {
-            const parent = SCHEMA.FIELD_BY_KEY[sf || pf || af];
-            const branchName = parent ? parent.label : (sf || pf || af);
-            const detail = discarded.map((d) => `${d.label}: ${d.value}`).join(", ");
-            logAudit(`Descarte de rama «${branchName}»`, `${p.id} (${p.fullName})`, `Respuesta cambiada a «${val === "" ? "Sin responder" : val}» · Subcampos descartados: ${detail}`);
-            toast(`Rama «${branchName}» cerrada: ${discarded.length} subcampo(s) descartado(s) y registrado(s) en auditoría.`);
-          }
-        }
+        if (sf || pf || af) closeOrphanBranches(p, sf || pf || af, val);
 
         const focusId = el.id;
         saveState();
@@ -2813,6 +3089,37 @@
       return;
     }
 
+    const hePt = t.closest("[data-he-patient]");
+    if (hePt) { ui.selectedPatientId = hePt.getAttribute("data-he-patient"); ui.dxSearch = ""; render(); return; }
+
+    const heTab = t.closest("[data-he-tab]");
+    if (heTab) {
+      ui.heTab = heTab.getAttribute("data-he-tab");
+      render();
+      const on = document.querySelector(`.he-tab[data-he-tab="${ui.heTab}"]`);
+      if (on) { on.focus({ preventScroll: true }); on.scrollIntoView({ block: "nearest", inline: "nearest" }); }
+      return;
+    }
+
+    const heFilter = t.closest("[data-he-filter]");
+    if (heFilter) { ui.heFilter = heFilter.getAttribute("data-he-filter"); render(); return; }
+
+    // Sí / No: un clic responde; volver a tocar la misma respuesta la borra.
+    const ynBtn = t.closest("[data-yn]");
+    if (ynBtn && !ynBtn.disabled) {
+      const p = activePatient();
+      const key = ynBtn.getAttribute("data-yn");
+      const field = SCHEMA.FIELD_BY_KEY[key];
+      const val = SCHEMA.readField(p, field) === ynBtn.getAttribute("data-yn-val") ? "" : ynBtn.getAttribute("data-yn-val");
+      SCHEMA.writeField(p, field, val);
+      closeOrphanBranches(p, key, val);
+      saveState();
+      render();
+      const again = document.querySelector(`[data-yn="${key}"][data-yn-val="${ynBtn.getAttribute("data-yn-val")}"]`);
+      if (again) again.focus({ preventScroll: true });
+      return;
+    }
+
     const navBtn = t.closest("[data-nav]");
     if (navBtn) {
       navigate(navBtn.getAttribute("data-nav"));
@@ -2881,12 +3188,6 @@
       return;
     }
 
-    const hospTab = t.closest("[data-hosp-tab]");
-    if (hospTab) {
-      ui.hospTab = hospTab.getAttribute("data-hosp-tab");
-      render();
-      return;
-    }
 
     const covBtn = t.closest("[data-set-cov]");
     if (covBtn) {

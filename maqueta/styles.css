@@ -1,43 +1,48 @@
-/* NeoSalud · Estilo «calma clínica»
-   Objetivo: lectura cómoda en guardias largas. Fondo de poco brillo, texto gris oscuro
-   (no negro puro), un solo color de acento y estados con tintes suaves que solo aparecen
-   donde dan información. Tipografía Atkinson Hyperlegible (diseñada para máxima
-   legibilidad); la variante mono solo para identificadores (HC, DNI, ID). */
-
+/* NeoSalud · Estilo «sala cálida» (v2)
+   Fondo crema y superficies marfil en lugar de blanco puro, para guardias largas sin encandilar.
+   Acento verde azulado hospitalario para acción y selección; azul clínico para información.
+   Títulos en Lexend (pensada para reducir la fatiga visual) y texto en Atkinson Hyperlegible Next. */
 :root {
   /* Superficies */
-  --canvas: #f3f6f5;          /* fondo general, gris verdoso con poco brillo */
-  --surface: #ffffff;         /* donde se lee o se escribe */
-  --surface-subtle: #f7f9f8;
-  --surface-clinical: #eef2fa; /* tinte del acento: selección, ayudas */
+  --canvas: #f3eee3;          /* fondo general, crema */
+  --surface: #fffcf5;         /* donde se lee o se escribe: marfil, no blanco */
+  --surface-subtle: #f9f5ec;
+  --surface-sunken: #efe9dc;
+  --surface-clinical: #e3f0ee; /* tinte del acento: selección, ayudas */
+  --surface-info: #e6eef6;
 
   /* Texto */
-  --navy: #1d2a35;            /* títulos */
-  --ink: #2a3640;             /* cuerpo */
-  --muted: #5e6c76;           /* secundario (contraste AA sobre blanco) */
+  --navy: #1b2b2c;            /* títulos */
+  --ink: #273534;             /* cuerpo */
+  --muted: #5b6764;           /* secundario (AA sobre crema) */
 
-  /* Acento único (selección, acción principal, enlaces) */
-  --accent: #2f55a4;
-  --accent-dark: #233f7c;
-  --teal: var(--accent);       /* alias histórico */
+  /* Acento hospitalario */
+  --accent: #0f6b6e;
+  --accent-dark: #0a5053;
+  --accent-soft: #cfe5e2;
+  --info: #2d5f8f;
+  --teal: var(--accent);
   --teal-dark: var(--accent-dark);
+  --on-accent: #fffcf5;
 
-  --border: #e2e8e5;
-  --border-strong: #ccd5d1;
+  --border: #e4dccb;
+  --border-strong: #cfc4ae;
 
   /* Estados: tintes suaves con texto oscuro de la misma familia */
-  --ok-bg: #eaf4ee;   --ok-ink: #2c6a4a;                          /* firmado / completo */
-  --warn-bg: #fff6d6; --warn-border: #efd98a; --warn-ink: #7a5b00; /* falta / a confirmar */
-  --danger-bg: #fbeeeb; --danger-border: #efc9c1; --danger-ink: #a63d2a; /* requiere acción */
-  --na-bg: #eff2f1;   --na-ink: #55636c;                          /* neutro / no aplica */
+  --ok-bg: #e4f1e7;   --ok-ink: #2a6544;   --ok-border: #bfdcc8;
+  --warn-bg: #fbf0cf; --warn-border: #e9d38c; --warn-ink: #6f5300;
+  --danger-bg: #f8e6e1; --danger-border: #e9c3b8; --danger-ink: #9c3a26;
+  --na-bg: #ece7dc;   --na-ink: #565f5c;
+  --info-border: #c4d5e8;
 
-  --rail-w: 232px;
-  --topbar-h: 60px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
-  --radius-xl: 12px;
-  --shadow-soft: none;
+  --rail-w: 248px;
+  --topbar-h: 64px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --shadow-soft: 0 1px 2px rgba(60, 45, 20, 0.05), 0 4px 14px rgba(60, 45, 20, 0.05);
+  --shadow-float: 0 10px 30px rgba(40, 30, 10, 0.16);
 
   /* Escala tipográfica (mínimo 13 px) */
   --fs-xs: 13px;
@@ -48,6 +53,7 @@
   --fs-2xl: 24px;
 
   --font-sans: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Lexend", "Atkinson Hyperlegible Next", system-ui, sans-serif;
   --font-mono: "Atkinson Hyperlegible Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -137,7 +143,7 @@ a:focus-visible {
   height: 34px;
   border-radius: 11px;
   background: var(--teal);
-  color: #ffffff;
+  color: var(--on-accent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -239,7 +245,7 @@ a:focus-visible {
 }
 
 .nav-item.active .nav-count {
-  background: #ffffff;
+  background: var(--surface);
   color: var(--teal-dark);
 }
 
@@ -558,7 +564,7 @@ a:focus-visible {
 
 .btn-primary {
   background: var(--teal);
-  color: #ffffff;
+  color: var(--on-accent);
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -620,7 +626,7 @@ a:focus-visible {
 
 .status-hosp { background: var(--surface-clinical); color: var(--teal-dark); }
 .status-incomp { background: var(--warn-bg); color: var(--warn-ink); }
-.status-alta { background: var(--surface-clinical); color: #284b96; }
+.status-alta { background: var(--surface-clinical); color: var(--info); }
 .status-egr { background: var(--ok-bg); color: var(--ok-ink); }
 .status-fall { background: var(--danger-bg); color: var(--danger-ink); }
 .status-na { background: var(--na-bg); color: var(--na-ink); }
@@ -891,7 +897,7 @@ table.clinical-table {
   padding: 8px 12px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  background: #ffffff;
+  background: var(--surface);
   color: var(--ink);
   font-size: 15px;
   transition: border-color 0.14s ease, box-shadow 0.14s ease;
@@ -925,7 +931,7 @@ table.clinical-table {
   margin-top: 16px;
   padding: 16px 18px;
   background: var(--surface-clinical);
-  border: 1px solid #cfd9ee;
+  border: 1px solid var(--info-border);
   border-left: 3px solid var(--teal);
   border-radius: var(--radius-md);
 }
@@ -969,7 +975,7 @@ table.clinical-table {
 .calc-box {
   padding: 16px 18px;
   border-radius: var(--radius-md);
-  border: 1px solid #cfd9ee;
+  border: 1px solid var(--info-border);
   background: var(--surface-clinical);
 }
 
@@ -1007,7 +1013,7 @@ table.clinical-table {
   margin-top: 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: #ffffff;
+  background: var(--surface);
   max-height: 230px;
   overflow-y: auto;
   box-shadow: 0 8px 24px rgba(18, 44, 66, 0.08);
@@ -1021,7 +1027,7 @@ table.clinical-table {
   padding: 9px 14px;
   border: 0;
   border-bottom: 1px solid var(--border);
-  background: #ffffff;
+  background: var(--surface);
   text-align: left;
   font-size: 14px;
 }
@@ -1092,13 +1098,13 @@ table.clinical-table {
 
 .banner-ok {
   background: var(--ok-bg);
-  border-color: #c9e3d3;
+  border-color: var(--ok-border);
   color: var(--ok-ink);
 }
 
 .banner-info {
   background: var(--surface-clinical);
-  border-color: #cfd9ee;
+  border-color: var(--info-border);
   color: var(--navy);
 }
 
@@ -1106,14 +1112,14 @@ table.clinical-table {
 .draft-sheet {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: #ffffff;
+  background: var(--surface);
   overflow: hidden;
 }
 
 .draft-sheet-head {
   padding: 12px 18px;
   background: var(--navy);
-  color: #ffffff;
+  color: var(--on-accent);
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
@@ -1131,7 +1137,7 @@ table.clinical-table {
   font-size: 14px;
   line-height: 1.65;
   color: var(--ink);
-  background: #ffffff;
+  background: var(--surface);
   resize: vertical;
 }
 
@@ -1305,7 +1311,7 @@ table.clinical-table {
   border-top: 4px solid var(--teal);
   border-radius: var(--radius-md);
   padding: 12px 14px;
-  background: #ffffff;
+  background: var(--surface);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1313,8 +1319,8 @@ table.clinical-table {
 
 .tl-node.mod-high { border-top-color: var(--danger-ink); }
 .tl-node.mod-mid { border-top-color: #c87b1e; }
-.tl-node.mod-low { border-top-color: #0d7a7d; }
-.tl-node.mod-aa { border-top-color: #1c7c54; }
+.tl-node.mod-low { border-top-color: var(--accent); }
+.tl-node.mod-aa { border-top-color: var(--ok-ink); }
 
 .tl-day {
   font-size: 13px;
@@ -1345,7 +1351,7 @@ table.clinical-table {
 }
 
 .tri-seg-yes { background: var(--teal); }
-.tri-seg-no { background: #b7c6e6; }
+.tri-seg-no { background: var(--accent-soft); }
 .tri-seg-miss { background: #d9a441; }
 .tri-seg-na { background: var(--border-strong); }
 
@@ -1406,7 +1412,7 @@ table.clinical-table {
 .step-item.active .step-num {
   background: var(--teal);
   border-color: var(--teal);
-  color: #ffffff;
+  color: var(--on-accent);
 }
 
 .step-item.done .step-num {
@@ -1499,7 +1505,7 @@ table.clinical-table {
   padding: 12px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: #ffffff;
+  background: var(--surface);
   text-align: left;
   margin-bottom: 8px;
   transition: background-color 0.14s ease, border-color 0.14s ease;
@@ -1527,7 +1533,7 @@ table.clinical-table {
 .toast {
   padding: 11px 16px;
   background: var(--navy);
-  color: #ffffff;
+  color: var(--on-accent);
   border-radius: var(--radius-md);
   font-size: 14px;
   box-shadow: 0 10px 26px rgba(18, 44, 66, 0.22);
@@ -1744,7 +1750,7 @@ details.form-section[open] > .panel-body {
 .field.is-branch {
   padding-left: 10px;
   margin-left: -12px;
-  border-left: 2px solid #b7c6e6;
+  border-left: 2px solid var(--accent-soft);
   animation: neo-section-in 0.2s ease-out;
 }
 
@@ -1784,7 +1790,7 @@ details.form-section[open] > .panel-body {
 .doc-preview {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
-  background: #ffffff;
+  background: var(--surface);
   overflow: hidden;
   position: sticky;
   top: calc(var(--topbar-h) + 12px);
@@ -2026,7 +2032,7 @@ div.cuna-free { cursor: default; }
   font-weight: 600;
   color: var(--muted);
 }
-.hstep.is-current .hstep-num { border-color: var(--accent); background: var(--accent); color: #fff; }
+.hstep.is-current .hstep-num { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .hstep-ok .hstep-num { border-color: var(--ok-ink); color: var(--ok-ink); }
 .hstep-title { display: block; font-weight: 600; color: var(--navy); }
 .hstep-state { display: block; font-size: var(--fs-xs); color: var(--muted); }
@@ -2080,4 +2086,177 @@ div.cuna-free { cursor: default; }
   max-width: 68ch;
   font-size: var(--fs-md);
   color: var(--muted);
+}
+
+
+/* v2: títulos en Lexend */
+.page-title, .panel-title, .modal-head h2, .history-name, .brand-name, .he-title, .login-title {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+/* ===================== v2 · Hospitalización y epicrisis ===================== */
+.he {
+  display: grid;
+  grid-template-columns: 284px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.he-list {
+  position: sticky;
+  top: calc(var(--topbar-h) + 16px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - var(--topbar-h) - 40px);
+  overflow: hidden;
+}
+.he-list-head { padding: 14px; display: grid; gap: 10px; border-bottom: 1px solid var(--border); }
+.he-items { overflow-y: auto; padding: 8px; display: grid; gap: 4px; }
+.he-item {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: none;
+}
+.he-item:hover { background: var(--surface-subtle); border-color: var(--border); }
+.he-item.is-on { background: var(--surface-clinical); border-color: var(--accent-soft); }
+.he-item-name { font-weight: 600; color: var(--navy); }
+.he-item-meta { font-size: var(--fs-xs); color: var(--muted); }
+.he-item-foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
+.he-pend { font-size: var(--fs-xs); color: var(--warn-ink); }
+.he-new { margin: 8px 14px 14px; }
+
+.seg { display: flex; background: var(--surface-sunken); border-radius: 999px; padding: 3px; gap: 2px; }
+.seg-btn {
+  flex: 1;
+  border: 0;
+  background: none;
+  border-radius: 999px;
+  padding: 5px 4px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  min-width: 0;
+}
+.seg-btn { display: grid; justify-items: center; line-height: 1.25; }
+.seg-count { font-size: 12px; font-weight: 500; opacity: .85; }
+.seg-btn.is-on { background: var(--surface); color: var(--accent-dark); box-shadow: var(--shadow-soft); }
+
+.he-main { min-width: 0; }
+.he-head {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 18px 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 16px;
+  box-shadow: var(--shadow-soft);
+}
+.he-head-id { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.he-title { margin: 0; font-size: var(--fs-2xl); font-weight: 600; color: var(--navy); line-height: 1.25; }
+.he-facts { margin: 0; color: var(--muted); grid-column: 1; }
+.he-facts .mono { margin-left: 6px; font-size: var(--fs-xs); }
+.he-head-actions { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+
+.he-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  margin: 16px 0;
+  padding: 4px;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-lg);
+  scrollbar-width: thin;
+}
+.he-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  border: 0;
+  background: none;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+.he-tab:hover { background: var(--surface-subtle); }
+.he-tab.is-on { background: var(--surface); color: var(--accent-dark); box-shadow: var(--shadow-soft); }
+.he-tab.is-na { color: var(--muted); font-weight: 500; }
+.tab-pend {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+}
+.tab-ok { color: var(--ok-ink); font-size: 13px; }
+.tab-na { font-size: 12px; color: var(--muted); font-weight: 500; }
+
+.he-alerts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.he-alert {
+  border: 1px solid var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-weight: 600;
+  font-size: var(--fs-sm);
+}
+.he-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.he-card {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-soft);
+}
+.he-card:hover { border-color: var(--accent-soft); }
+.he-card.is-na { background: var(--surface-subtle); box-shadow: none; }
+.he-card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--navy); }
+.he-card-facts { display: grid; gap: 2px; font-size: var(--fs-sm); color: var(--muted); }
+
+/* Sí / No segmentado */
+.yn { display: flex; gap: 6px; align-items: stretch; flex-wrap: wrap; }
+.yn-btn {
+  min-width: 52px;
+  padding: 7px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-weight: 600;
+  color: var(--ink);
+}
+.yn-btn:hover:not(:disabled) { border-color: var(--accent); }
+.yn-btn.is-on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.yn-btn:disabled { cursor: default; opacity: .7; }
+.select.yn-other { width: 96px; flex: 0 0 auto; padding-left: 8px; padding-right: 22px; font-size: var(--fs-xs); color: var(--muted); }
+.select.yn-other.is-on { color: var(--ink); border-color: var(--accent); background: var(--surface-clinical); }
+
+.ing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+
+@media (max-width: 960px) {
+  .he { grid-template-columns: 1fr; }
+  .he-list { position: static; max-height: none; }
+  .he-items { max-height: 240px; }
+  .he-head { grid-template-columns: 1fr; }
+  .he-head-actions { grid-column: 1; grid-row: auto; }
 }

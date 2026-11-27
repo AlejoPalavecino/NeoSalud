@@ -16,6 +16,8 @@ Base documental de arquitectura, producto, UX/UI y decisiones técnicas para **N
 | [03 · Diseño UX / UI](./03-diseno-ux-ui.md) | Sistema visual (evolución de `DocNeo-Demo`), tipografía, paleta, componentes, estados obligatorios, accesibilidad, responsive y guion de demo. | Listo para maquetado |
 | [04 · Arquitectura y Ambientes](./04-arquitectura-y-ambientes.md) | Arquitectura de despliegue en VPS con Docker, endurecimiento de seguridad, estrategia de 4 ambientes (`dev`, `test`, `preprod`, `prod`) y modelo de dominio. | Aprobado |
 | [05 · Stack Tecnológico](./05-stack-tecnologico.md) | Stack definitivo por capa (Next.js, TypeScript, PostgreSQL, Prisma), herramientas de archivos, testing e infraestructura. | Aprobado |
+| [06 · Auditoría del sistema de referencia](./06-auditoria-sistema-referencia.md) | Inventario completo del sistema chileno (secciones, desplegables y ramas) y brecha con la maqueta. | Borrador |
+| [07 · Hospitalización y Epicrisis en la referencia](./07-hospitalizacion-epicrisis-referencia.md) | Auditoría campo por campo: 51 secciones, 128 campos, 9 cronologías y qué se abre en cada paciente demo. | Borrador |
 | [Guía de Uso de la Maqueta](./guia-uso-maqueta.md) | Qué mostrar y qué preguntarle al servicio en cada sección, cómo leer las etiquetas «A confirmar» y guion de 15 minutos para la reunión de validación. | Disponible |
 | [Registro de ADRs](./adr/README.md) | Decisiones arquitectónicas duraderas con alternativas, costos, riesgos y condiciones de revisión. | 3 aprobados |
 

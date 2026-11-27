@@ -121,26 +121,29 @@
 
   const MICROORGANISMS = [
     "Staphylococcus epidermidis (SCN)",
+    "Staphylococcus coagulasa negativo (otro)",
     "Staphylococcus aureus",
-    "Klebsiella pneumoniae",
-    "Escherichia coli",
-    "Pseudomonas aeruginosa",
-    "Enterobacter cloacae",
-    "Candida albicans",
+    "S. aureus meticilino resistente (SAMR)",
+    "Enterococcus spp.",
     "Estreptococo grupo B (S. agalactiae)",
-    "Sin aislamiento microbiológico"
+    "Escherichia coli",
+    "Klebsiella pneumoniae",
+    "Enterobacter cloacae",
+    "Serratia marcescens",
+    "Pseudomonas aeruginosa",
+    "Acinetobacter baumannii",
+    "Candida albicans",
+    "Candida parapsilosis",
+    "Listeria monocytogenes",
+    "Sin aislamiento microbiológico",
+    "Otro (detallar)"
   ];
 
   const ANTIBIOTICS = [
-    "Ampicilina",
-    "Gentamicina",
-    "Vancomicina",
-    "Amikacina",
-    "Piperacilina-Tazobactam",
-    "Meropenem",
-    "Cefotaxima",
-    "Fluconazol",
-    "Metronidazol"
+    "Ampicilina", "Penicilina G", "Cloxacilina", "Cefadroxilo", "Gentamicina", "Amikacina",
+    "Cefotaxima", "Ceftriaxona", "Ceftazidima", "Cefepime", "Vancomicina", "Meropenem", "Imipenem",
+    "Piperacilina-Tazobactam", "Clindamicina", "Metronidazol", "Linezolid", "Ciprofloxacino",
+    "Cotrimoxazol", "Azitromicina", "Fluconazol", "Anfotericina B", "Aciclovir", "Otro (detallar)"
   ];
 
   const RESP_MODALITIES = [

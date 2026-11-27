@@ -159,114 +159,265 @@
   ];
 
   // Datos estructurados por sistema durante la internación (scope "h" → p.hosp).
-  // «tab» indica en qué pestaña de Hospitalización se muestra cada sección.
+  // Relevado campo por campo de la referencia (docs/07) y adaptado a Argentina.
+  //   tab      · pestaña de «Hospitalización y epicrisis» donde se muestra
+  //   applies  · contexto clínico en que la sección existe ("lt36": nació antes de las 36 sem;
+  //              "preterm": < 32 sem o < 1.500 g). Si no aplica, no se pide.
+  //   type "yesno" · botones No / Sí + «otra respuesta» (Desconocido, No aplica, No consignado)
+  const GERMS = (global.NEOSALUD_DATA && global.NEOSALUD_DATA.MICROORGANISMS) || [];
+  const BRAIN_FINDINGS = ["Sin hallazgos", "HIV grado I", "HIV grado II", "HIV grado III", "HIV grado IV",
+    "Leucomalacia periventricular", "Otro hallazgo", "Pendiente"];
+  const JENSEN = ["Sin DBP", "Grado 1 · cánula ≤ 2 L/min", "Grado 2 · cánula > 2 L/min o soporte no invasivo",
+    "Grado 3 · ventilación mecánica invasiva", "No evaluable"];
+
   const HOSP_SECTIONS = [
+    // ---------- Respiratorio ----------
     {
-      id: "h-resp", tab: "respiratorio", title: "Datos respiratorios estructurados",
+      id: "h-resp", tab: "respiratorio", title: "Diagnósticos y complicaciones respiratorias",
       sub: "Lo que no surge de la línea de tiempo se pregunta una sola vez",
       fields: [
-        { key: "sdr", scope: "h", label: "Síndrome de dificultad respiratoria (EMH)", type: "select", core: true, options: YES_NO },
-        { key: "surfactantDoses", scope: "h", label: "Dosis de surfactante", type: "number", core: true, min: 0, max: 4, showIf: { key: "sdr", eq: "Sí" } },
-        { key: "surfactantRoute", scope: "h", label: "Técnica de administración", type: "select", core: true,
-          options: ["INSURE", "LISA / MIST", "Por tubo en ventilación mecánica"], showIf: { key: "sdr", eq: "Sí" } },
-        { key: "surfactantHours", scope: "h", label: "Edad a la primera dosis (horas)", type: "number", core: false, min: 0, showIf: { key: "sdr", eq: "Sí" } },
-        { key: "pneumothorax", scope: "h", label: "Neumotórax", type: "select", core: true, options: YES_NO },
-        { key: "pneumoDrain", scope: "h", label: "Requirió drenaje pleural", type: "select", core: true, options: YES_NO, showIf: { key: "pneumothorax", eq: "Sí" } }
+        { key: "sdr", scope: "h", label: "Membrana hialina / SDR", type: "yesno", core: true },
+        { key: "surfactant", scope: "h", label: "Surfactante", type: "yesno", core: true },
+        { key: "surfactantDoses", scope: "h", label: "Número de dosis", type: "number", core: true, min: 1, max: 4, showIf: { key: "surfactant", eq: "Sí" } },
+        { key: "surfactantHours", scope: "h", label: "Edad a la primera dosis (horas)", type: "number", core: true, min: 0, showIf: { key: "surfactant", eq: "Sí" } },
+        { key: "surfactantRoute", scope: "h", label: "Método", type: "select", core: true,
+          options: ["INSURE", "LISA / MIST", "Por tubo en ventilación mecánica", "Otro"], showIf: { key: "surfactant", eq: "Sí" } },
+        { key: "pneumothorax", scope: "h", label: "Neumotórax", type: "yesno", core: true },
+        { key: "pneumoDrain", scope: "h", label: "Requirió drenaje pleural", type: "yesno", core: false, showIf: { key: "pneumothorax", eq: "Sí" } }
       ]
     },
     {
-      id: "h-nutr", tab: "nutricion", title: "Digestivo y crecimiento",
-      sub: "Enterocolitis, perforación, peso mínimo y suplementos",
+      id: "h-dbp", tab: "respiratorio", applies: "lt36", title: "Displasia broncopulmonar",
+      sub: "Si llegó a evaluarse a las 36 semanas. «No evaluable»: egresó o falleció antes",
       fields: [
-        { key: "nec", scope: "h", label: "Enterocolitis necrotizante (NEC)", type: "select", core: true, options: YES_NO },
-        { key: "necStage", scope: "h", label: "Estadio de Bell", type: "select", core: true,
-          options: ["I (sospecha)", "II (confirmada)", "III (avanzada)"], showIf: { key: "nec", eq: "Sí" } },
-        { key: "necSurgery", scope: "h", label: "Cirugía por NEC", type: "select", core: true, options: YES_NO, showIf: { key: "nec", eq: "Sí" } },
-        { key: "sip", scope: "h", label: "Perforación intestinal espontánea", type: "select", core: true, options: YES_NO },
-        { key: "minWeight", scope: "h", label: "Peso mínimo (g)", type: "number", core: true, min: 300 },
-        { key: "minWeightDay", scope: "h", label: "Día de vida del peso mínimo", type: "number", core: true, min: 0 },
-        { key: "ironDay", scope: "h", label: "Día de inicio de hierro", type: "number", core: false, min: 0 },
-        { key: "vitDDay", scope: "h", label: "Día de inicio de vitamina D", type: "number", core: false, min: 0 },
-        { key: "zincDay", scope: "h", label: "Día de inicio de zinc", type: "number", core: false, min: 0 },
-        { key: "biweeklyLabs", scope: "h", label: "Laboratorios quincenales del prematuro (d15 a d120)", type: "select", core: false, options: YES_NO }
+        { key: "dbpEval36", scope: "h", label: "Evaluación de DBP a las 36 semanas", type: "select", core: true,
+          options: ["Sí", "No", "No evaluable", "Desconocido"] },
+        { key: "dbpJensenConsigned", scope: "h", label: "Clasificación de Jensen consignada", type: "select", core: true,
+          options: JENSEN, showIf: { key: "dbpEval36", eq: "Sí" },
+          help: "Se propone la calculada desde la cronología; si consignás otra, quedan las dos" }
       ]
     },
+
+    // ---------- Cardiovascular ----------
     {
-      id: "h-inf", tab: "infeccioso", title: "Sepsis precoz e infecciones de transmisión vertical",
-      sub: "Las ramas de Chagas, sífilis, HIV y hepatitis B aparecen solo si la serología materna fue reactiva",
+      id: "h-cardio", tab: "cardio", title: "Ecocardiograma y ductus",
+      sub: "Cada respuesta abre solo lo que corresponde",
       fields: [
-        { key: "earlySepsis", scope: "h", label: "Sepsis precoz (< 72 h)", type: "select", core: true, options: YES_NO },
+        { key: "cardio.echo", scope: "h", label: "Ecocardiograma realizado", type: "yesno", core: true },
+        { key: "cardio.chd", scope: "h", label: "Cardiopatía congénita", type: "yesno", core: true },
+        { key: "cardio.chdDetail", scope: "h", label: "Cardiopatía (detalle)", type: "text", core: false, showIf: { key: "cardio.chd", eq: "Sí" } },
+        { key: "cardio.dap", scope: "h", label: "Ductus arterioso persistente", type: "yesno", core: true, showIf: { key: "cardio.echo", eq: "Sí" } },
+        { key: "cardio.dapMed", scope: "h", label: "Tratamiento farmacológico", type: "select", core: true,
+          options: ["No", "Ibuprofeno", "Indometacina", "Paracetamol", "Otro"], showIf: { key: "cardio.dap", eq: "Sí" } },
+        { key: "cardio.dapInvasive", scope: "h", label: "Cierre invasivo", type: "select", core: true,
+          options: ["No", "Ligadura quirúrgica", "Cierre percutáneo (cateterismo)"], showIf: { key: "cardio.dap", eq: "Sí" } }
+      ]
+    },
+
+    // ---------- Infeccioso ----------
+    {
+      id: "h-inf", tab: "infeccioso", title: "Sepsis precoz y colonización",
+      sub: "El germen sale de la misma lista cerrada que los episodios de IAAS",
+      fields: [
+        { key: "earlySepsis", scope: "h", label: "Sepsis precoz (< 72 h)", type: "yesno", core: true },
         { key: "earlySepsisCulture", scope: "h", label: "Confirmación", type: "select", core: true,
           options: ["Hemocultivo positivo", "Sepsis clínica (hemocultivo negativo)"], showIf: { key: "earlySepsis", eq: "Sí" } },
-        { key: "earlySepsisGerm", scope: "h", label: "Germen aislado", type: "text", core: true, showIf: { key: "earlySepsisCulture", eq: "Hemocultivo positivo" } },
-        { key: "colonization", scope: "h", label: "Colonización sin infección (vigilancia)", type: "select", core: false, options: YES_NO },
+        { key: "earlySepsisGerm", scope: "h", label: "Germen aislado", type: "select", core: true, options: GERMS,
+          showIf: { key: "earlySepsisCulture", eq: "Hemocultivo positivo" } },
+        { key: "earlySepsisGermOther", scope: "h", label: "Germen (si es «otro»)", type: "text", core: true,
+          showIf: { key: "earlySepsisGerm", eq: "Otro (detallar)" } },
+        { key: "iaas", scope: "h", label: "IAAS (infección asociada a la atención en salud)", type: "yesno", core: true,
+          help: "Con «Sí» se registran los episodios abajo; la sepsis tardía es un episodio más" },
+        { key: "colonization", scope: "h", label: "Colonización sin infección", type: "yesno", core: false },
+        { key: "colonizationDetail", scope: "h", label: "Germen y resistencia", type: "text", core: false, showIf: { key: "colonization", eq: "Sí" } }
+      ]
+    },
+    {
+      id: "h-vertical", tab: "infeccioso", title: "Infecciones de transmisión vertical",
+      sub: "Aparecen solo si la serología materna del ingreso fue reactiva",
+      fields: [
         { key: "chagasRn", scope: "h", label: "Chagas congénito: estudio del RN", type: "select", core: true,
           options: ["Micrométodo negativo · serología a los 10 meses", "Micrométodo positivo · en tratamiento", "Pendiente"],
           showIf: { key: "chagas", eq: "Reactiva" } },
         { key: "syphilisRn", scope: "h", label: "Sífilis congénita: conducta con el RN", type: "select", core: true,
           options: ["VDRL del RN no reactiva · seguimiento", "Penicilina 10 días", "Penicilina benzatínica dosis única", "En evaluación"],
           showIf: { key: "vdrl", eq: "Reactiva" } },
-        { key: "hivProphylaxis", scope: "h", label: "HIV: profilaxis antirretroviral del RN", type: "select", core: true, options: YES_NO,
+        { key: "hivProphylaxis", scope: "h", label: "HIV: profilaxis antirretroviral del RN", type: "yesno", core: true,
           showIf: { key: "hivSerology", eq: "Reactiva" } },
-        { key: "hbvProphylaxis", scope: "h", label: "Hepatitis B: gammaglobulina + vacuna en 12 h", type: "select", core: true, options: YES_NO,
+        { key: "hbvProphylaxis", scope: "h", label: "Hepatitis B: gammaglobulina + vacuna en 12 h", type: "yesno", core: true,
           showIf: { key: "hbsag", eq: "Reactiva" } }
       ]
     },
+
+    // ---------- Nutrición y crecimiento ----------
     {
-      id: "h-cardio", tab: "otros", title: "Cardiovascular",
-      sub: "Ecocardiograma, cardiopatía congénita y ductus",
+      id: "h-nutr", tab: "nutricion", title: "Gastrointestinal y nutrición",
+      sub: "Parenteral, enterocolitis y perforación",
       fields: [
-        { key: "cardio.echo", scope: "h", label: "Ecocardiograma realizado", type: "select", core: true, options: YES_NO },
-        { key: "cardio.chd", scope: "h", label: "Cardiopatía congénita", type: "select", core: true, options: YES_NO, showIf: { key: "cardio.echo", eq: "Sí" } },
-        { key: "cardio.dap", scope: "h", label: "Ductus arterioso permeable (DAP)", type: "select", core: true, options: YES_NO, showIf: { key: "cardio.echo", eq: "Sí" } },
-        { key: "cardio.dapMed", scope: "h", label: "Tratamiento farmacológico del DAP", type: "select", core: true,
-          options: ["No", "Ibuprofeno", "Indometacina", "Paracetamol"], showIf: { key: "cardio.dap", eq: "Sí" } },
-        { key: "cardio.dapInvasive", scope: "h", label: "Cierre invasivo del DAP", type: "select", core: true,
-          options: ["No", "Ligadura quirúrgica", "Cierre percutáneo"], showIf: { key: "cardio.dap", eq: "Sí" } }
+        { key: "npt", scope: "h", label: "Nutrición parenteral", type: "yesno", core: true },
+        { key: "nec", scope: "h", label: "Enterocolitis necrotizante (NEC)", type: "yesno", core: true },
+        { key: "necStage", scope: "h", label: "Estadio de Bell", type: "select", core: true,
+          options: ["I (sospecha)", "II (confirmada)", "III (avanzada)"], showIf: { key: "nec", eq: "Sí" } },
+        { key: "necSurgery", scope: "h", label: "Cirugía por NEC", type: "yesno", core: true, showIf: { key: "nec", eq: "Sí" } },
+        { key: "necSurgeryType", scope: "h", label: "Tipo de cirugía", type: "text", core: true, showIf: { key: "necSurgery", eq: "Sí" },
+          placeholder: "Ej. Laparotomía con resección e ileostomía" },
+        { key: "necSurgeryDate", scope: "h", label: "Fecha de la cirugía", type: "date", core: true, showIf: { key: "necSurgery", eq: "Sí" } },
+        { key: "sip", scope: "h", label: "Perforación intestinal espontánea", type: "yesno", core: true }
       ]
     },
     {
-      id: "h-neuro", tab: "otros", title: "Neurológico",
-      sub: "Apneas, convulsiones y neuroimágenes",
+      id: "h-growth", tab: "nutricion", title: "Crecimiento",
+      sub: "Peso mínimo y controles seriados (7 d, 14 d, 28 d, 36 semanas y alta)",
       fields: [
-        { key: "neuro.apnea", scope: "h", label: "Apneas", type: "select", core: true, options: YES_NO },
-        { key: "neuro.seizures", scope: "h", label: "Convulsiones", type: "select", core: true, options: YES_NO },
-        { key: "neuro.cranialUs", scope: "h", label: "Ecografía cerebral (peor resultado)", type: "select", core: true,
-          options: ["Normal", "HIV grado I", "HIV grado II", "HIV grado III", "HIV grado IV", "Leucomalacia periventricular", "No realizada"] },
-        { key: "neuro.mri", scope: "h", label: "Resonancia magnética cerebral", type: "select", core: false,
-          options: ["Normal", "LMPV focal", "LMPV quística", "Otra lesión", "No realizada"] },
-        { key: "neuro.hydrocephalus", scope: "h", label: "Hidrocefalia posthemorrágica", type: "select", core: true, options: YES_NO },
+        { key: "minWeight", scope: "h", label: "Peso mínimo (g)", type: "number", core: true, min: 300 },
+        { key: "minWeightDay", scope: "h", label: "Día de vida del peso mínimo", type: "number", core: true, min: 0 },
+        { key: "enteralFullDay", scope: "h", label: "Día de alimentación enteral completa", type: "number", core: false, min: 0 },
+        { key: "growthSeries", scope: "h", label: "Registra evaluación nutricional seriada", type: "yesno", core: true,
+          help: "Los z-score se copian de la calculadora Fenton; las velocidades de crecimiento se calculan solas" }
+      ]
+    },
+    {
+      id: "h-b12", tab: "nutricion", title: "Vitamina B12 del recién nacido",
+      sub: "Se estudia sobre todo cuando la madre es vegana o vegetariana estricta",
+      fields: [
+        { key: "b12Study", scope: "h", label: "Se estudió vitamina B12 del RN", type: "yesno", core: false },
+        { key: "b12Value", scope: "h", label: "Vitamina B12 del RN (pg/mL)", type: "number", core: false, showIf: { key: "b12Study", eq: "Sí" } },
+        { key: "b12Treatment", scope: "h", label: "Recibió tratamiento con B12", type: "yesno", core: false, showIf: { key: "b12Study", eq: "Sí" } }
+      ]
+    },
+    {
+      id: "h-suppl", tab: "nutricion", title: "Inicio de suplementos",
+      sub: "Día de vida en que empezó cada uno",
+      fields: [
+        { key: "ironDay", scope: "h", label: "Hierro (día de inicio)", type: "number", core: false, min: 0 },
+        { key: "vitDDay", scope: "h", label: "Vitamina D (día de inicio)", type: "number", core: false, min: 0 },
+        { key: "zincDay", scope: "h", label: "Zinc (día de inicio)", type: "number", core: false, min: 0 }
+      ]
+    },
+
+    // ---------- Prematurez ----------
+    {
+      id: "h-prem-labs", tab: "prematurez", applies: "preterm", title: "Exámenes quincenales del prematuro",
+      sub: "Días 15 a 120 (± 4 días): hemograma, metabolismo óseo, función renal, hígado y hierro",
+      fields: [
+        { key: "biweeklyLabs", scope: "h", label: "Registra los exámenes quincenales", type: "yesno", core: true }
+      ]
+    },
+    {
+      id: "h-rop", tab: "prematurez", applies: "preterm", title: "Retinopatía del prematuro",
+      sub: "Los controles se cargan abajo; el peor estadio se calcula solo",
+      fields: [
+        { key: "ropScreening", scope: "h", label: "Evaluación de ROP realizada", type: "yesno", core: true }
+      ]
+    },
+
+    // ---------- Neurológico ----------
+    {
+      id: "h-neuro", tab: "neuro", title: "Clínica neurológica",
+      sub: "Apneas y convulsiones",
+      fields: [
+        { key: "neuro.apnea", scope: "h", label: "Apneas", type: "yesno", core: true },
+        { key: "neuro.seizures", scope: "h", label: "Convulsiones", type: "yesno", core: true }
+      ]
+    },
+    {
+      id: "h-neuroimg", tab: "neuro", title: "Neuroimagen",
+      sub: "Qué estudio se hizo y el mayor compromiso que mostró",
+      fields: [
+        { key: "neuro.usDone", scope: "h", label: "Ecografía cerebral realizada", type: "yesno", core: true },
+        { key: "neuro.cranialUs", scope: "h", label: "Mayor compromiso en la ecografía", type: "select", core: true,
+          options: BRAIN_FINDINGS, showIf: { key: "neuro.usDone", eq: "Sí" } },
+        { key: "neuro.mriDone", scope: "h", label: "Resonancia magnética realizada", type: "yesno", core: false },
+        { key: "neuro.mri", scope: "h", label: "Mayor compromiso en la resonancia", type: "select", core: false,
+          options: ["Sin hallazgos", "LMPV focal", "LMPV quística", "Hemorragia parenquimatosa", "Otra lesión", "Pendiente"],
+          showIf: { key: "neuro.mriDone", eq: "Sí" } },
+        { key: "neuro.hydrocephalus", scope: "h", label: "Hidrocefalia posthemorrágica", type: "yesno", core: true,
+          showIf: { anyOf: [{ key: "neuro.usDone", eq: "Sí" }, { key: "neuro.mriDone", eq: "Sí" }] } },
         { key: "neuro.hydroSurgery", scope: "h", label: "Tratamiento de la hidrocefalia", type: "select", core: true,
           options: ["Sin cirugía", "Reservorio", "Derivación ventrículo-peritoneal"], showIf: { key: "neuro.hydrocephalus", eq: "Sí" } }
+      ]
+    },
+
+    // ---------- Hematología ----------
+    {
+      id: "h-hemato", tab: "hemato", title: "Hematología y otras terapias",
+      sub: "Con «Requirió transfusión» se registran los episodios abajo",
+      fields: [
+        { key: "phototherapy", scope: "h", label: "Fototerapia", type: "yesno", core: true },
+        { key: "transfusionNeeded", scope: "h", label: "Requirió transfusión", type: "yesno", core: true },
+        { key: "hypoglycemia", scope: "h", label: "Hipoglucemia", type: "yesno", core: true },
+        { key: "thrombocytopenia", scope: "h", label: "Trombocitopenia significativa", type: "yesno", core: true },
+        { key: "coombs", scope: "h", label: "Coombs directo", type: "select", core: false, options: ["Negativo", "Positivo", "No realizado"] }
+      ]
+    },
+
+    // ---------- Accesos vasculares ----------
+    {
+      id: "h-access", tab: "accesos", title: "Accesos vasculares",
+      sub: "Marcá los que tuvo; los períodos se registran en la cronología de catéteres",
+      fields: [
+        { key: "access.cvu", scope: "h", label: "Catéter venoso umbilical", type: "yesno", core: true },
+        { key: "access.cau", scope: "h", label: "Catéter arterial umbilical", type: "yesno", core: true },
+        { key: "access.picc", scope: "h", label: "Catéter Silastic / PICC", type: "yesno", core: true },
+        { key: "access.cvc", scope: "h", label: "Otro catéter venoso central", type: "yesno", core: true }
+      ]
+    },
+
+    // ---------- Procedimientos ----------
+    {
+      id: "h-proc", tab: "procedimientos", title: "Procedimientos relevantes",
+      sub: "Las cirugías se registran en la tabla de abajo",
+      fields: [
+        { key: "surgeryDuring", scope: "h", label: "Cirugía durante la internación", type: "yesno", core: true },
+        { key: "otherProcedures", scope: "h", label: "Otros procedimientos relevantes", type: "yesno", core: false },
+        { key: "otherProceduresDetail", scope: "h", label: "Procedimientos realizados", type: "textarea", core: false,
+          showIf: { key: "otherProcedures", eq: "Sí" }, placeholder: "Ej. Fotocoagulación láser, cierre de ileostomía" }
       ]
     }
   ];
 
   // Egreso (scope "d" → p.discharge). Si la condición es «Fallecido» se abre la rama de
   // fallecimiento y se ocultan los datos que solo aplican a un egreso vivo.
+  const ALIVE = { key: "condition", notEq: "Fallecido" };
   const DISCHARGE_SECTIONS = [
     {
-      id: "d-egreso", title: "Condición de egreso",
+      id: "d-egreso", title: "Datos de egreso",
       sub: "Fecha, condición y destino. Cierra la internación al firmar la epicrisis",
       fields: [
         { key: "date", scope: "d", label: "Fecha de egreso", type: "date", core: true },
         { key: "condition", scope: "d", label: "Condición al egreso", type: "select", core: true,
-          options: ["Alta a domicilio", "Derivado a otra institución", "Fallecido"] },
-        { key: "destination", scope: "d", label: "Institución de destino", type: "text", core: true,
-          showIf: { key: "condition", eq: "Derivado a otra institución" } },
-        { key: "weightG", scope: "d", label: "Peso al egreso (g)", type: "number", core: true, showIf: { key: "condition", notEq: "Fallecido" } },
-        { key: "lengthCm", scope: "d", label: "Talla al egreso (cm)", type: "number", core: true, step: 0.1, showIf: { key: "condition", notEq: "Fallecido" } },
-        { key: "hcCm", scope: "d", label: "Perímetro cefálico al egreso (cm)", type: "number", core: true, step: 0.1, showIf: { key: "condition", notEq: "Fallecido" } },
+          options: ["Alta a domicilio", "Derivado a otra institución", "Pase a otro servicio (pediatría)", "Fallecido"] },
+        { key: "destination", scope: "d", label: "Institución o servicio de destino", type: "text", core: true,
+          showIf: { key: "condition", in: ["Derivado a otra institución", "Pase a otro servicio (pediatría)"] } },
+        { key: "healthStatus", scope: "d", label: "Estado al egreso", type: "select", core: true,
+          options: ["Sano", "Con patología en seguimiento"], showIf: ALIVE }
+      ]
+    },
+    {
+      id: "d-vivo", title: "Condición al alta",
+      sub: "Antropometría, alimentación y oxígeno al egreso",
+      fields: [
+        { key: "weightG", scope: "d", label: "Peso al egreso (g)", type: "number", core: true, showIf: ALIVE },
+        { key: "lengthCm", scope: "d", label: "Talla al egreso (cm)", type: "number", core: true, step: 0.1, showIf: ALIVE },
+        { key: "hcCm", scope: "d", label: "Perímetro cefálico al egreso (cm)", type: "number", core: true, step: 0.1, showIf: ALIVE },
         { key: "feeding", scope: "d", label: "Alimentación al alta", type: "select", core: true,
           options: [["Lactancia materna exclusiva", "Lactancia materna exclusiva (LME)"], "Alimentación mixta", "Fórmula", "Sonda / NPO"],
-          showIf: { key: "condition", notEq: "Fallecido" } },
-        { key: "homeO2", scope: "d", label: "Oxígeno domiciliario", type: "select", core: true, options: YES_NO, showIf: { key: "condition", notEq: "Fallecido" } },
+          showIf: ALIVE },
+        { key: "homeO2", scope: "d", label: "Oxígeno domiciliario", type: "yesno", core: true, showIf: ALIVE },
+        { key: "homeO2Flow", scope: "d", label: "Flujo de oxígeno al alta (L/min)", type: "number", core: false, step: 0.05,
+          showIf: { key: "homeO2", eq: "Sí" } }
+      ]
+    },
+    {
+      id: "d-fallecido", title: "Detalle del fallecimiento",
+      sub: "Reemplaza a la condición al alta",
+      fields: [
         { key: "deathCause", scope: "d", label: "Causa básica de muerte (CIE-10)", type: "text", core: true,
           placeholder: "Ej. P07.0 · Peso extremadamente bajo al nacer", showIf: { key: "condition", eq: "Fallecido" } },
-        { key: "deathImmediate", scope: "d", label: "Causa inmediata", type: "text", core: false, showIf: { key: "condition", eq: "Fallecido" } },
+        { key: "deathImmediate", scope: "d", label: "Causa inmediata", type: "text", core: true, showIf: { key: "condition", eq: "Fallecido" } },
         { key: "deathPlace", scope: "d", label: "Lugar del fallecimiento", type: "select", core: true,
           options: ["Unidad de neonatología", "Sala de partos", "Quirófano", "Otro sector"], showIf: { key: "condition", eq: "Fallecido" } },
-        { key: "autopsy", scope: "d", label: "Autopsia solicitada", type: "select", core: false, options: YES_NO, showIf: { key: "condition", eq: "Fallecido" } }
+        { key: "autopsy", scope: "d", label: "Autopsia solicitada", type: "yesno", core: false, showIf: { key: "condition", eq: "Fallecido" } }
       ]
     },
     {
@@ -275,24 +426,26 @@
       fields: [
         { key: "screenFei", scope: "d", label: "Pesquisa endócrino-metabólica (FEI)", type: "select", core: true,
           options: ["Tomada · resultado normal", "Tomada · resultado alterado (en seguimiento)", "Tomada · sin resultado aún", "No tomada"],
-          showIf: { key: "condition", notEq: "Fallecido" } },
+          showIf: ALIVE },
         { key: "screenOea", scope: "d", label: "Otoemisiones acústicas (OEA)", type: "select", core: true,
-          options: ["Pasa ambos oídos", "No pasa · derivar a ORL", "No realizada"], showIf: { key: "condition", notEq: "Fallecido" } },
+          options: ["Pasa ambos oídos", "No pasa oído derecho", "No pasa oído izquierdo", "No pasa ambos oídos · derivar a ORL", "Realizada en otro centro", "No realizada"],
+          showIf: ALIVE },
         { key: "screenOximetry", scope: "d", label: "Oximetría de pulso pre y posductal", type: "select", core: true,
-          options: ["Normal", "Alterada · derivar a cardiología", "No realizada"], showIf: { key: "condition", notEq: "Fallecido" } },
+          options: ["Normal", "Alterada · derivar a cardiología", "No realizada"], showIf: ALIVE },
         { key: "screenRedReflex", scope: "d", label: "Reflejo rojo", type: "select", core: true,
-          options: ["Normal", "Alterado · derivar a oftalmología", "No realizado"], showIf: { key: "condition", notEq: "Fallecido" } },
+          options: ["Normal", "Alterado · derivar a oftalmología", "No realizado"], showIf: ALIVE },
         { key: "vacBcg", scope: "d", label: "Vacuna BCG", type: "select", core: true,
-          options: ["Aplicada", "Diferida (peso < 2.000 g u otra causa)", "Pendiente"], showIf: { key: "condition", notEq: "Fallecido" } },
+          options: ["Aplicada", "Diferida (peso < 2.000 g u otra causa)", "Pendiente"], showIf: ALIVE },
         { key: "vacHbv", scope: "d", label: "Vacuna Hepatitis B (primeras 12 h)", type: "select", core: true,
-          options: ["Aplicada", "Pendiente"], showIf: { key: "condition", notEq: "Fallecido" } }
+          options: ["Aplicada", "Pendiente"], showIf: ALIVE }
       ]
     },
     {
       id: "d-indicaciones", title: "Medicación e indicaciones al alta",
-      sub: "Texto libre del equipo tratante",
+      sub: "Texto del equipo tratante",
       fields: [
-        { key: "medications", scope: "d", label: "Medicación al alta", type: "textarea", core: true, showIf: { key: "condition", notEq: "Fallecido" } },
+        { key: "requiresMeds", scope: "d", label: "Requiere medicamentos al alta", type: "yesno", core: true, showIf: ALIVE },
+        { key: "medications", scope: "d", label: "Medicación al alta", type: "textarea", core: true, showIf: { key: "requiresMeds", eq: "Sí" } },
         { key: "indications", scope: "d", label: "Indicaciones y controles", type: "textarea", core: true }
       ]
     }
@@ -331,6 +484,8 @@
 
   function conditionMet(p, f) {
     if (!f.showIf) return true;
+    // «anyOf»: la rama se abre si se cumple cualquiera de las condiciones.
+    if (f.showIf.anyOf) return f.showIf.anyOf.some((c) => conditionMet(p, { showIf: c }));
     const parent = FIELD_BY_KEY[f.showIf.key];
     if (parent && !conditionMet(p, parent)) return false;
     const v = parent ? readField(p, parent) : "";
@@ -353,7 +508,11 @@
     return discarded;
   }
 
+  // Respuestas que no son ni Sí ni No (se ofrecen aparte para no ensuciar el botón principal).
+  const YESNO_OTHER = ["Desconocido", "No aplica", "No consignado"];
+
   global.NEOSALUD_SCHEMA = {
+    YESNO_OTHER,
     ADMISSION_SECTIONS,
     HOSP_SECTIONS,
     DISCHARGE_SECTIONS,

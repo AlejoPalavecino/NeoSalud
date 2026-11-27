@@ -4,8 +4,8 @@
     {
       "name": "maqueta",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "5173", "--bind", "127.0.0.1", "--directory", "maqueta"],
-      "port": 5173
+      "runtimeArgs": ["-m", "http.server", "5180", "--bind", "127.0.0.1", "--directory", "maqueta"],
+      "port": 5180
     }
   ]
 }
