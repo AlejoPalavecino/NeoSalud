@@ -1,6 +1,6 @@
 # Plan de diseño v2: navegación por tareas, Hospitalización y epicrisis, roles y estilo hospitalario
 
-- **Fecha:** 2026-11-27 · **Estado:** en ejecución (corte 1).
+- **Fecha:** 2026-11-27 · **Estado:** cortes 1 y 2 hechos; sigue el corte 3.
 - **Pedido:** incorporar todo lo que la referencia chilena registra en Hospitalización y Epicrisis ([07](./07-hospitalizacion-epicrisis-referencia.md)), sin copiar su forma de mostrarlo; reorganizar la navegación en accesos que sirvan; sumar login simulado y administración de usuarios; y un estilo visual de software hospitalario, cálido y descansado.
 
 ## 1. Problemas de la referencia que este diseño resuelve
@@ -82,7 +82,7 @@ Si un sistema no aplica (por ejemplo, Prematurez en un término), la pestaña se
 
 | Corte | Contenido | Estado |
 | --- | --- | --- |
-| 1 | Estilo visual nuevo · barra lateral nueva · sección Hospitalización y epicrisis (lista, cabecera, pestañas, Resumen, todos los campos de esquema con Sí/No segmentado, Epicrisis y egreso con documento) | En curso |
-| 2 | Cronologías editables con todos los campos de la referencia · tablas seriadas (evaluación nutricional, quincenales) | Pendiente |
+| 1 | Estilo visual nuevo · barra lateral nueva · sección Hospitalización y epicrisis (lista, cabecera, pestañas, Resumen, todos los campos de esquema con Sí/No segmentado, Epicrisis y egreso con documento) | Hecho |
+| 2 | Cronologías editables con todos los campos de la referencia · tablas seriadas (evaluación nutricional, quincenales) | Hecho |
 | 3 | Inicio (tablero) · Ingreso rápido y completo · login simulado · Administración de usuarios y permisos | Pendiente |
 | 4 | Estadísticas detalladas con filtros · ajustes de Exportar y Configuración | Pendiente |

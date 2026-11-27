@@ -693,7 +693,10 @@
     const respLines = r.eventCount
       ? [
           `Días acumulados: O2 ${r.totals.o2} d · Cánula bajo flujo ${r.totals.cn} d · Cánula alto flujo ${r.totals.cnaf} d · CPAP ${r.totals.cpap} d · VNI ${r.totals.vni} d · VMC ${r.totals.vmc} d · VAFO ${r.totals.vafo} d.`,
-          `FiO2 máx primeras 24 h: ${r.maxFio224 ? r.maxFio224 + "%" : "Sin dato"} | O2 día 28: ${r.o2Day28} | O2 a las 36 sem: ${r.o2At36w}.`
+          `FiO2 máx primeras 24 h: ${r.maxFio224 ? r.maxFio224 + "%" : "Sin dato"} | O2 día 28: ${r.o2Day28} | O2 a las 36 sem: ${r.o2At36w}.`,
+          // Secuencia de soporte cambio por cambio, como la redacta la referencia.
+          `Secuencia de soporte: ${[...(h.respEvents || [])].sort((a, b) => a.day - b.day).map((e) =>
+            `día ${e.day}${e.precision === "Fecha y hora" && e.time ? ` (${e.time} h)` : ""}: ${e.event ? e.event.toLowerCase() + " → " : ""}${e.modality || "modalidad sin consignar"}${e.fio2 ? `, FiO2 ${e.fio2}%` : ""}${e.flow ? `, ${e.flow} L/min` : ""}`).join("; ")}.`
         ]
       : [r.complete ? "Sin soporte respiratorio (cronología completa al corte)." : "Sin eventos respiratorios registrados (cronología incompleta)."];
 

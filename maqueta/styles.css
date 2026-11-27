@@ -2260,3 +2260,79 @@ div.cuna-free { cursor: default; }
   .he-head { grid-template-columns: 1fr; }
   .he-head-actions { grid-column: 1; grid-row: auto; }
 }
+
+/* ===================== v2 · Cronologías y tablas seriadas ===================== */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* Contenedor de referencia de lo posicionado dentro de tablas que se desplazan (si no, empuja el ancho de la página) */
+.table-wrap, .series-wrap { position: relative; }
+.link-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent-dark);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.link-btn:hover { color: var(--accent); }
+.tl-count {
+  display: inline-block;
+  min-width: 24px;
+  margin-left: 6px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 22px;
+  text-align: center;
+  vertical-align: middle;
+}
+.tl-panel .derived-strip { margin-bottom: 14px; }
+.tl-issues ul, .goto-list { margin: 6px 0 0; padding-left: 18px; }
+.tl-issues li, .goto-list li { margin: 2px 0; }
+.epi-check p { margin: 0 0 4px; }
+.goto-list { display: flex; flex-wrap: wrap; gap: 4px 16px; list-style: none; padding-left: 0; }
+.clinical-table tr.has-issue td, .clinical-table tr.has-issue th { background: var(--danger-bg); }
+.tl-actions { text-align: right; white-space: nowrap; width: 1%; }
+.req { color: var(--danger-ink); }
+
+/* Mosaico de modalidades respiratorias */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.tile {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  padding: 9px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+}
+.tile strong { font-size: var(--fs-md); color: var(--navy); }
+.tile span { font-size: 12px; color: var(--muted); line-height: 1.3; }
+.tile:hover { border-color: var(--accent); }
+.tile.is-on { background: var(--accent); border-color: var(--accent); }
+.tile.is-on strong, .tile.is-on span { color: var(--on-accent); }
+
+/* Tablas de controles seriados: se desplazan a lo ancho; la primera columna queda fija */
+.series-wrap { overflow-x: auto; }
+.series-table { min-width: 100%; }
+.series-table th, .series-table td { white-space: nowrap; vertical-align: top; }
+.series-table thead th { font-size: var(--fs-xs); }
+.series-table tbody th[scope="row"] {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+  display: grid;
+  text-align: left;
+  min-width: 140px;
+}
+.th-unit { display: block; font-weight: 500; color: var(--muted); font-size: 12px; }
+.input.input-cell { width: 92px; padding: 5px 8px; font-size: var(--fs-sm); }
+.input.input-cell[type="date"] { width: 148px; }
+.series-table .calc { background: var(--surface-clinical); font-weight: 600; text-align: right; }
+.series-table tr.is-future td, .series-table tr.is-future th { opacity: .62; }
+.cell-warn { display: block; max-width: 148px; white-space: normal; font-size: 12px; color: var(--danger-ink); line-height: 1.3; margin-top: 3px; }
+.tl-form { align-items: start; }

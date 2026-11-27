@@ -2,6 +2,7 @@
   const DATA = window.NEOSALUD_DATA;
   const ENG = window.NEOSALUD_ENGINE;
   const SCHEMA = window.NEOSALUD_SCHEMA;
+  const TL = window.NEOSALUD_TIMELINES;
   const STORAGE_KEY = "neosalud.maqueta.v1";
 
   let state = loadState();
@@ -68,8 +69,17 @@
         if (parsed && parsed.version === DATA.STATE_VERSION && Array.isArray(parsed.patients)) st = parsed;
       }
     } catch (e) { /* fallback to seed */ }
-    st = st || DATA.createSeedState();
-    st.patients.forEach(fillDerivedAnswers);
+    return prepareState(st || DATA.createSeedState());
+  }
+
+  // Lleva los registros viejos al formato v2 y completa respuestas y controles de la demo.
+  function prepareState(st) {
+    st.patients.forEach((p) => {
+      p.hosp = p.hosp || {};
+      TL.upgradeRecords(p);
+      TL.seedSeries(p);
+      fillDerivedAnswers(p);
+    });
     return st;
   }
 
@@ -807,291 +817,262 @@
     `;
   }
 
-  // ===================== VIEW 4: HOSPITALIZACIÓN =====================
-  // Paneles de cronología de cada sistema (se insertan en las pestañas de «Hospitalización y epicrisis»).
-  function hospPanelsHtml(tabArg) {
-    const p = activePatient();
-    if (!p) return `<div class="empty-state"><strong>Sin paciente seleccionado</strong></div>`;
-    const r = activeRole();
-    const canEdit = r.permissions.editClinical;
-    const resp = ENG.deriveRespiratory(p);
-    const nutr = ENG.deriveNutrition(p);
-    const cath = ENG.deriveCatheters(p);
-    const rop = ENG.deriveRopWorst(p);
-
-
-    let tabHtml = "";
-    if (tabArg === "respiratorio") {
-      const modClass = (m) => {
-        if (m === "VAFO" || m === "VMC" || m === "ECMO") return "mod-high";
-        if (m === "CPAP" || m === "NIPPV" || m === "BiPAP" || m === "CNAF") return "mod-mid";
-        if (m === "AA") return "mod-aa";
-        return "mod-low";
-      };
-      const sorted = [...(p.hosp.respEvents || [])].sort((a, b) => a.day - b.day);
-      tabHtml = `
-        <section class="panel">
-          <div class="panel-head">
-            <div>
-              <h2 class="panel-title">Línea de tiempo respiratoria</h2>
-              <p class="panel-sub">Registrá solo los cambios de soporte; los días acumulados y la clasificación DBP Jensen / Bancalari se derivan solos</p>
-            </div>
-            <div class="page-actions">
-              <div class="coverage-toggle" role="group" aria-label="Cobertura de cronología respiratoria">
-                <button class="coverage-btn ${!resp.complete ? "active-incomp" : ""}" type="button" data-set-cov="respCoverage" data-cov-val="incompleta" ${!canEdit ? "disabled" : ""}>Cronología incompleta</button>
-                <button class="coverage-btn ${resp.complete ? "active-comp" : ""}" type="button" data-set-cov="respCoverage" data-cov-val="completa" ${!canEdit ? "disabled" : ""}>Completa al corte</button>
-              </div>
-              ${canEdit ? `<button class="btn btn-primary btn-sm" type="button" id="btn-add-resp">Agregar cambio</button>` : ""}
-            </div>
-          </div>
-          <div class="panel-body">
-            ${!resp.complete ? `<div class="banner banner-warn"><div>Cronología marcada como <strong>incompleta</strong>: el sistema no deduce un «No» que podría ser falso y la cuenta como deuda de registro en Estadísticas hasta que confirmes el corte.</div></div>` : ""}
-
-            <div class="derived-strip">
-              <div class="derived-item"><span class="derived-label">Días de O2</span><span class="derived-val">${resp.totals.o2} d</span></div>
-              <div class="derived-item"><span class="derived-label">CPAP</span><span class="derived-val">${resp.totals.cpap} d</span></div>
-              <div class="derived-item"><span class="derived-label">Cánula bajo flujo</span><span class="derived-val">${resp.totals.cn} d</span></div>
-              <div class="derived-item"><span class="derived-label">Cánula alto flujo</span><span class="derived-val">${resp.totals.cnaf} d</span></div>
-              <div class="derived-item"><span class="derived-label">VNI (NIPPV / BiPAP)</span><span class="derived-val">${resp.totals.vni} d</span></div>
-              <div class="derived-item"><span class="derived-label">VMC</span><span class="derived-val">${resp.totals.vmc} d</span></div>
-              <div class="derived-item"><span class="derived-label">VAFO</span><span class="derived-val">${resp.totals.vafo} d</span></div>
-              <div class="derived-item"><span class="derived-label">FiO2 máx 24h</span><span class="derived-val">${resp.maxFio224 ? resp.maxFio224 + "%" : "Sin dato"}</span></div>
-              <div class="derived-item"><span class="derived-label">O2 día 28</span><span class="derived-val">${esc(resp.o2Day28)}</span></div>
-              <div class="derived-item"><span class="derived-label">O2 36 sem EGC</span><span class="derived-val">${esc(resp.o2At36w)}</span></div>
-              <div class="derived-item"><span class="derived-label">DBP Jensen (calculada)</span><span class="derived-val">${esc(resp.jensen)}</span></div>
-              <div class="derived-item"><span class="derived-label">DBP Bancalari (calculada)</span><span class="derived-val">${esc(resp.bancalari)}</span></div>
-            </div>
-
-            ${sorted.length ? `
-              <div class="timeline-track" aria-label="Eventos de soporte respiratorio">
-                ${sorted.map((ev) => `
-                  <article class="tl-node ${modClass(ev.modality)}">
-                    <div class="tl-day"><strong class="mono">Día ${ev.day}</strong><span class="mono">${esc(ENG.fmtDate(ev.date))}</span></div>
-                    <div class="tl-mod">${esc(ev.modality)}</div>
-                    <div class="tl-meta">${esc(ev.event)}</div>
-                    <div class="field-hint num">FiO2 ${ev.fio2 || "—"}% ${ev.peep ? `· PEEP ${ev.peep}` : ""} ${ev.flow ? `· Flujo ${ev.flow} L/m` : ""}</div>
-                  </article>
-                `).join("")}
-              </div>
-            ` : `<div class="empty-state"><strong>Sin cambios respiratorios cargados</strong>Agregá el evento inicial de soporte para derivar los totales.</div>`}
-
-          </div>
-        </section>
-      `;
-    } else if (tabArg === "nutricion") {
-      const sorted = [...(p.hosp.nutrEvents || [])].sort((a, b) => a.day - b.day);
-      tabHtml = `
-        <section class="panel">
-          <div class="panel-head">
-            <div>
-              <h2 class="panel-title">Línea de tiempo nutricional (3 vías simultáneas)</h2>
-              <p class="panel-sub">Enteral, parenteral y suplementos conviven en paralelo; hitos y días de NPT se calculan solos</p>
-            </div>
-            <div class="page-actions">
-              <div class="coverage-toggle">
-                <button class="coverage-btn ${!nutr.complete ? "active-incomp" : ""}" type="button" data-set-cov="nutrCoverage" data-cov-val="incompleta" ${!canEdit ? "disabled" : ""}>Incompleta</button>
-                <button class="coverage-btn ${nutr.complete ? "active-comp" : ""}" type="button" data-set-cov="nutrCoverage" data-cov-val="completa" ${!canEdit ? "disabled" : ""}>Completa al corte</button>
-              </div>
-              ${canEdit ? `<button class="btn btn-primary btn-sm" type="button" id="btn-add-nutr">Agregar evento</button>` : ""}
-            </div>
-          </div>
-          <div class="panel-body">
-            <div class="derived-strip" style="margin-bottom:14px">
-              <div class="derived-item"><span class="derived-label">Días de parenteral (NPT)</span><span class="derived-val">${nutr.nptDays} d</span></div>
-              <div class="derived-item"><span class="derived-label">Inicio estímulo enteral</span><span class="derived-val">${nutr.enteralStartDay !== null ? `DDV ${nutr.enteralStartDay}` : "Sin dato"}</span></div>
-              <div class="derived-item"><span class="derived-label">Partió con leche materna</span><span class="derived-val">${nutr.startedHumanMilk === null ? "Sin dato" : nutr.startedHumanMilk ? "Sí" : "No"}</span></div>
-              <div class="derived-item"><span class="derived-label">Alcanza 100 cc/kg/d</span><span class="derived-val">${nutr.day100cc !== null ? `DDV ${nutr.day100cc}` : "Aún no / Sin dato"}</span></div>
-              <div class="derived-item"><span class="derived-label">Fortificación</span><span class="derived-val">${nutr.fortificationDay !== null ? `DDV ${nutr.fortificationDay}` : "No / Sin dato"}</span></div>
-              <div class="derived-item"><span class="derived-label">NEC</span><span class="derived-val">${esc(p.hosp.nec || "Sin responder")}</span></div>
-            </div>
-            <div class="table-wrap">
-              <table class="clinical-table">
-                <thead><tr><th>DDV</th><th>Fecha</th><th>Vía</th><th>Evento</th><th>Leche / Aporte</th><th>Detalle</th></tr></thead>
-                <tbody>
-                  ${sorted.length ? sorted.map((e) => `
-                    <tr>
-                      <td class="mono">D${e.day}</td>
-                      <td class="num">${esc(ENG.fmtDate(e.date) || "—")}</td>
-                      <td><span class="status-pill ${e.route === "Parenteral" ? "status-warn" : e.route === "Enteral" ? "status-hosp" : "status-na"}">${esc(e.route)}</span></td>
-                      <td><strong>${esc(e.event)}</strong></td>
-                      <td class="num">${e.milk ? esc(e.milk) : "—"}${e.ccKg ? ` · ${e.ccKg} cc/kg/d` : ""}</td>
-                      <td>${esc(e.detail || "")}</td>
-                    </tr>
-                  `).join("") : `<tr><td colspan="6" class="empty-state">Sin eventos nutricionales registrados.</td></tr>`}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-      `;
-    } else if (tabArg === "infeccioso") {
-      tabHtml = `
-        <section class="panel">
-          <div class="panel-head">
-            <div>
-              <h2 class="panel-title">Episodios infecciosos e IAAS</h2>
-              <p class="panel-sub">Gérmenes y antibióticos desde catálogo cerrado para derivar sepsis tardía y bacteriemia asociada a catéter</p>
-            </div>
-            <div class="page-actions">
-              <div class="coverage-toggle">
-                <button class="coverage-btn ${p.hosp.iaasCoverage !== "completa" ? "active-incomp" : ""}" type="button" data-set-cov="iaasCoverage" data-cov-val="incompleta" ${!canEdit ? "disabled" : ""}>Incompleta</button>
-                <button class="coverage-btn ${p.hosp.iaasCoverage === "completa" ? "active-comp" : ""}" type="button" data-set-cov="iaasCoverage" data-cov-val="completa" ${!canEdit ? "disabled" : ""}>Completa al corte</button>
-              </div>
-              ${canEdit ? `<button class="btn btn-primary btn-sm" type="button" id="btn-add-iaas">Agregar episodio</button>` : ""}
-            </div>
-          </div>
-          <div class="panel-body tight">
-            <div class="table-wrap">
-              <table class="clinical-table">
-                <thead><tr><th>DDV</th><th>Síndrome</th><th>Foco</th><th>Germen</th><th>Antibióticos</th><th>Días</th><th>Asoc. catéter</th></tr></thead>
-                <tbody>
-                  ${(p.hosp.iaasEpisodes || []).length ? p.hosp.iaasEpisodes.map((e) => `
-                    <tr>
-                      <td class="mono">D${e.day}</td>
-                      <td><strong>${esc(e.syndrome)}</strong></td>
-                      <td>${esc(e.focus)}</td>
-                      <td>${esc(e.germ)}</td>
-                      <td>${esc(e.abx1)}${e.abx2 ? " + " + esc(e.abx2) : ""}</td>
-                      <td class="num">${e.days} d</td>
-                      <td><span class="status-pill ${e.catheterRelated === "Sí" ? "status-danger" : "status-na"}">${esc(e.catheterRelated)}</span></td>
-                    </tr>
-                  `).join("") : `<tr><td colspan="7" class="empty-state">Sin episodios infecciosos cargados.</td></tr>`}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-      `;
-    } else if (tabArg === "cateteres") {
-      tabHtml = `
-        <section class="panel">
-          <div class="panel-head">
-            <div>
-              <h2 class="panel-title">Accesos vasculares centrales (línea unificada)</h2>
-              <p class="panel-sub">CVU, CAU, PICC y CVC en una sola serie para derivar días-catéter y tasas por 1.000 días</p>
-            </div>
-            ${canEdit ? `<button class="btn btn-primary btn-sm" type="button" id="btn-add-cath">Agregar catéter</button>` : ""}
-          </div>
-          <div class="panel-body">
-            <div class="derived-strip" style="margin-bottom:14px">
-              <div class="derived-item"><span class="derived-label">Total días-catéter</span><span class="derived-val">${cath.totalDays} d</span></div>
-              <div class="derived-item"><span class="derived-label">CVU</span><span class="derived-val">${cath.byType.CVU} d</span></div>
-              <div class="derived-item"><span class="derived-label">CAU</span><span class="derived-val">${cath.byType.CAU} d</span></div>
-              <div class="derived-item"><span class="derived-label">PICC / Silastic</span><span class="derived-val">${cath.byType.PICC} d</span></div>
-              <div class="derived-item"><span class="derived-label">CVC</span><span class="derived-val">${cath.byType.CVC} d</span></div>
-            </div>
-            <div class="table-wrap">
-              <table class="clinical-table">
-                <thead><tr><th>Tipo</th><th>Colocación</th><th>Retiro</th><th>Días</th><th>Sitio</th><th>Motivo retiro</th><th>Complicación</th></tr></thead>
-                <tbody>
-                  ${(p.hosp.catheters || []).length ? p.hosp.catheters.map((c) => {
-                    const dur = Math.max(0, (c.removeDay !== "" ? Number(c.removeDay) : ENG.getPatientStayDays(p)) - Number(c.insertDay));
-                    return `
-                      <tr>
-                        <td><strong>${esc(c.type)}</strong></td>
-                        <td class="mono">D${c.insertDay}</td>
-                        <td class="mono">${c.removeDay !== "" ? "D" + c.removeDay : "Activo"}</td>
-                        <td class="num">${dur} d</td>
-                        <td>${esc(c.site)}</td>
-                        <td>${esc(c.reason)}</td>
-                        <td>${esc(c.complication)}</td>
-                      </tr>
-                    `;
-                  }).join("") : `<tr><td colspan="7" class="empty-state">Sin catéteres centrales registrados.</td></tr>`}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-      `;
-    } else if (tabArg === "transfusiones") {
-      tabHtml = `
-        <section class="panel">
-          <div class="panel-head">
-            <div>
-              <h2 class="panel-title">Transfusiones y hemocomponentes</h2>
-              <p class="panel-sub">Total derivado automáticamente: ${(p.hosp.transfusions || []).length} episodio(s)</p>
-            </div>
-            ${canEdit ? `<button class="btn btn-primary btn-sm" type="button" id="btn-add-tx">Agregar transfusión</button>` : ""}
-          </div>
-          <div class="panel-body tight">
-            <div class="table-wrap">
-              <table class="clinical-table">
-                <thead><tr><th>DDV</th><th>Hemocomponente</th><th>Indicación</th><th>Volumen</th><th>Reacción</th></tr></thead>
-                <tbody>
-                  ${(p.hosp.transfusions || []).length ? p.hosp.transfusions.map((t) => `
-                    <tr>
-                      <td class="mono">D${t.day}</td>
-                      <td><strong>${esc(t.component)}</strong></td>
-                      <td>${esc(t.indication)}</td>
-                      <td class="num">${t.mlKg} mL/kg</td>
-                      <td>${esc(t.reaction)}</td>
-                    </tr>
-                  `).join("") : `<tr><td colspan="5" class="empty-state">Sin transfusiones registradas.</td></tr>`}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-      `;
-    } else if (tabArg === "rop") {
-      tabHtml = `
-          <section class="panel">
-            <div class="panel-head">
-              <div>
-                <h2 class="panel-title">Retinopatía del prematuro (ROP)</h2>
-                <p class="panel-sub">Peor estadio derivado automáticamente: <strong>${esc(rop.summary)}</strong></p>
-              </div>
-              ${canEdit ? `<button class="btn btn-secondary btn-sm" type="button" id="btn-add-rop">Agregar control</button>` : ""}
-            </div>
-            <div class="panel-body tight">
-              <table class="clinical-table">
-                <thead><tr><th>DDV</th><th>Estadio</th><th>Zona</th><th>Plus</th><th>Conducta</th></tr></thead>
-                <tbody>
-                  ${(p.hosp.ropExams || []).length ? p.hosp.ropExams.map((e) => `
-                    <tr><td class="mono">D${e.day}</td><td class="num">${e.stage}</td><td>${esc(e.zone)}</td><td>${esc(e.plus)}</td><td>${esc(e.treatment)}</td></tr>
-                  `).join("") : `<tr><td colspan="5" class="empty-state">${esc(rop.summary)}</td></tr>`}
-                </tbody>
-              </table>
-            </div>
-          </section>
-      `;
-    } else if (tabArg === "cirugias") {
-      tabHtml = `
-        <section class="panel">
-          <div class="panel-head"><h2 class="panel-title">Procedimientos quirúrgicos (${(p.hosp.surgeries || []).length})</h2></div>
-          <div class="panel-body tight">
-            <table class="clinical-table">
-              <thead><tr><th>DDV</th><th>Procedimiento</th><th>Evolución</th></tr></thead>
-              <tbody>
-                ${(p.hosp.surgeries || []).length ? p.hosp.surgeries.map((s) => `
-                  <tr><td class="mono">D${s.day}</td><td><strong>${esc(s.procedure)}</strong></td><td>${esc(s.outcome)}</td></tr>
-                `).join("") : `<tr><td colspan="3" class="empty-state">Sin procedimientos quirúrgicos registrados.</td></tr>`}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      `;
-    }
-
-    return tabHtml;
+  // ===================== CRONOLOGÍAS Y TABLAS SERIADAS (timelines.js) =====================
+  // Un solo componente para las 7 cronologías: tabla legible + editor con alta, edición y baja.
+  function stripHtml(items) {
+    return `<div class="derived-strip">${items.map(([l, v]) => `<div class="derived-item"><span class="derived-label">${esc(l)}</span><span class="derived-val">${esc(v)}</span></div>`).join("")}</div>`;
   }
 
+  function timelineDerivedHtml(kind, p) {
+    if (kind === "resp") {
+      const r = ENG.deriveRespiratory(p);
+      return stripHtml([
+        [isActive(p) ? "Soporte actual" : "Soporte al egreso", respCurrent(p) || "Sin registro"],
+        ["Oxígeno", `${r.totals.o2} d`], ["CPAP", `${r.totals.cpap} d`], ["VNI", `${r.totals.vni} d`],
+        ["VMC", `${r.totals.vmc} d`], ["VAFO", `${r.totals.vafo} d`], ["Cánula bajo / alto flujo", `${r.totals.cn} / ${r.totals.cnaf} d`],
+        ["FiO₂ máx. 24 h", r.maxFio224 ? `${r.maxFio224}%` : "Sin dato"], ["O₂ al día 28", r.o2Day28], ["O₂ a las 36 sem", r.o2At36w],
+        ["DBP Jensen (calculada)", r.jensen], ["DBP Bancalari (calculada)", r.bancalari]
+      ]);
+    }
+    if (kind === "nutr") {
+      const n = ENG.deriveNutrition(p);
+      return stripHtml([
+        ["Días de parenteral", `${n.nptDays} d`], ["Inicio enteral", n.enteralStartDay !== null ? `día ${n.enteralStartDay}` : "Sin dato"],
+        ["Inició con leche materna", n.startedHumanMilk === null ? "Sin dato" : n.startedHumanMilk ? "Sí" : "No"],
+        ["100 cc/kg/día", n.day100cc !== null ? `día ${n.day100cc}` : "Aún no"], ["Fortificación", n.fortificationDay !== null ? `día ${n.fortificationDay}` : "No"]
+      ]);
+    }
+    if (kind === "cath") {
+      const c = ENG.deriveCatheters(p);
+      return stripHtml([["Días-catéter", `${c.totalDays} d`], ["CVU", `${c.byType.CVU} d`], ["CAU", `${c.byType.CAU} d`], ["PICC", `${c.byType.PICC} d`], ["CVC", `${c.byType.CVC} d`]]);
+    }
+    if (kind === "rop") return stripHtml([["Peor resultado", ENG.deriveRopWorst(p).summary]]);
+    if (kind === "iaas") {
+      const eps = p.hosp.iaasEpisodes || [];
+      return stripHtml([["Episodios", String(eps.length)], ["Sepsis tardía", eps.some((e) => e.syndrome === "Sepsis") ? "Sí" : "No"],
+        ["Asociadas a catéter", String(eps.filter((e) => e.catheterRelated === "Sí").length)]]);
+    }
+    if (kind === "tx") return stripHtml([["Transfusiones", String((p.hosp.transfusions || []).length)]]);
+    if (kind === "surg") return stripHtml([["Cirugías", String((p.hosp.surgeries || []).length)]]);
+    return "";
+  }
+
+  function tlSortKey(r) {
+    const d = r.day !== undefined ? r.day : r.insertDay;
+    return (d === "" || d === undefined ? 1e9 : Number(d)) + (r.time ? Number(r.time.replace(":", "")) / 1e5 : 0);
+  }
+
+  function timelineHtml(kind, p) {
+    const cfg = TL.TIMELINES[kind];
+    const canEdit = activeRole().permissions.editClinical;
+    const list = [...(p.hosp[cfg.list] || [])].sort((a, b) => tlSortKey(a) - tlSortKey(b));
+    const issues = cfg.issues ? cfg.issues(p.hosp[cfg.list] || [], p) : [];
+    const withIssue = new Set(issues.map((i) => i[0]));
+    const complete = cfg.coverage && p.hosp[cfg.coverage] === "completa";
+    const cov = cfg.coverage ? `
+      <div class="coverage-toggle" role="group" aria-label="Cobertura de la cronología">
+        <button class="coverage-btn ${!complete ? "active-incomp" : ""}" type="button" data-set-cov="${cfg.coverage}" data-cov-val="incompleta" ${canEdit ? "" : "disabled"}>Incompleta</button>
+        <button class="coverage-btn ${complete ? "active-comp" : ""}" type="button" data-set-cov="${cfg.coverage}" data-cov-val="completa" ${canEdit ? "" : "disabled"}>Completa al corte</button>
+      </div>` : "";
+    return `
+      <section class="panel tl-panel" id="tl-${kind}">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">${esc(cfg.title)} <span class="tl-count num">${list.length}</span></h2>
+            <p class="panel-sub">${esc(cfg.sub)}</p>
+          </div>
+          <div class="page-actions">
+            ${cov}
+            ${canEdit ? `<button class="btn btn-primary btn-sm" type="button" data-tl-add="${kind}">${esc(cfg.addLabel)}</button>` : ""}
+          </div>
+        </div>
+        <div class="panel-body">
+          ${cfg.coverage && !complete ? `<div class="banner banner-warn"><div>Cronología <strong>incompleta</strong>: no se deduce un «No» que podría ser falso y cuenta como deuda de registro en Estadísticas hasta que confirmes el corte.</div></div>` : ""}
+          ${issues.length ? `
+            <div class="banner banner-danger tl-issues" role="alert">
+              <div><strong>${complete ? "La cronología está marcada completa pero tiene problemas:" : "Revisá estos registros:"}</strong>
+                <ul>${issues.map(([id, text]) => `<li>${esc(text)} ${canEdit ? `<button class="link-btn" type="button" data-tl-edit="${kind}" data-tl-id="${esc(id)}">Ir al ${esc(cfg.item)}</button>` : ""}</li>`).join("")}</ul>
+              </div>
+            </div>` : ""}
+          ${timelineDerivedHtml(kind, p)}
+          ${list.length ? `
+            <div class="table-wrap">
+              <table class="clinical-table tl-table">
+                <thead><tr>${cfg.columns.map(([h]) => `<th>${esc(h)}</th>`).join("")}<th><span class="sr-only">Acciones</span></th></tr></thead>
+                <tbody>
+                  ${list.map((r) => `
+                    <tr class="${withIssue.has(r.id) ? "has-issue" : ""}">
+                      ${cfg.columns.map(([, fn], i) => `<td${i === 0 ? ' class="mono"' : ""}>${esc(fn(r, p))}</td>`).join("")}
+                      <td class="tl-actions">${canEdit ? `<button class="btn btn-ghost btn-sm" type="button" data-tl-edit="${kind}" data-tl-id="${esc(r.id)}">Editar</button>` : ""}</td>
+                    </tr>`).join("")}
+                </tbody>
+              </table>
+            </div>` : `<div class="empty-state"><strong>Sin registros</strong>${canEdit ? `Usá «${esc(cfg.addLabel)}» para cargar el primero.` : ""}</div>`}
+        </div>
+      </section>`;
+  }
+
+  // ---- Editor de un registro (modal). El borrador vive en ui.tlEdit hasta guardar. ----
+  function optionTriples(opts) {
+    return (opts || []).map((o) => (Array.isArray(o) ? [o[0], o[1], o[2] || ""] : [o, o, ""]));
+  }
+
+  function tlFieldHtml(f, rec) {
+    const v = rec[f.key] === undefined || rec[f.key] === null ? "" : rec[f.key];
+    const id = `tlf-${f.key}`;
+    let control;
+    if (f.type === "tiles") {
+      control = `<div class="tiles" role="radiogroup" aria-labelledby="${id}-lab">${optionTriples(f.options).map(([val, code, label]) => `
+        <button class="tile${String(v) === String(val) ? " is-on" : ""}" type="button" role="radio" aria-checked="${String(v) === String(val)}" data-tlf-tile="${f.key}" data-val="${esc(val)}">
+          <strong>${esc(code)}</strong><span>${esc(label)}</span>
+        </button>`).join("")}</div>`;
+    } else if (f.type === "select") {
+      const opts = optionTriples(f.options);
+      if (v !== "" && !opts.some(([val]) => String(val) === String(v))) opts.push([v, `${v} (valor cargado)`, ""]);
+      control = `<select class="select" id="${id}" data-tlf="${f.key}"><option value="">Sin consignar</option>${opts.map(([val, lab]) => `<option value="${esc(val)}" ${String(val) === String(v) ? "selected" : ""}>${esc(lab)}</option>`).join("")}</select>`;
+    } else {
+      const type = ["number", "date", "time"].includes(f.type) ? f.type : "text";
+      const attrs = [f.min !== undefined ? `min="${f.min}"` : "", f.max !== undefined ? `max="${f.max}"` : "", f.step ? `step="${f.step}"` : ""].join(" ");
+      control = `<input class="input${f.type === "number" ? " num" : ""}" id="${id}" type="${type}" data-tlf="${f.key}" value="${esc(v)}" ${attrs} />`;
+    }
+    return `<div class="field${f.wide || f.type === "tiles" ? " field-wide" : ""}"><label for="${id}" id="${id}-lab">${esc(f.label)}${f.required ? ' <span class="req" aria-label="obligatorio">*</span>' : ""}</label>${control}</div>`;
+  }
+
+  function openTimelineEditor(kind, id) {
+    const p = activePatient();
+    const cfg = TL.TIMELINES[kind];
+    const existing = id ? (p.hosp[cfg.list] || []).find((r) => r.id === id) : null;
+    const today = p.dischargeDate && p.dischargeDate < ENG.REF_DATE ? p.dischargeDate : ENG.REF_DATE;
+    const fresh = kind === "resp" ? { date: today, precision: "Solo fecha", event: (p.hosp.respEvents || []).length ? "" : "Inicio de soporte" }
+      : kind === "cath" ? { insertDate: today } : { date: today };
+    ui.tlEdit = { kind, id: existing ? id : null, rec: existing ? JSON.parse(JSON.stringify(existing)) : fresh, confirmDelete: false, error: "" };
+    renderTimelineEditor();
+  }
+
+  function renderTimelineEditor(focusId) {
+    const { kind, id, rec, confirmDelete, error } = ui.tlEdit;
+    const cfg = TL.TIMELINES[kind];
+    const fields = cfg.fields.filter((f) => !f.showIf || f.showIf(rec));
+    openModal(
+      `${id ? "Editar" : "Agregar"} ${cfg.item} · ${cfg.title.split(" · ")[0].toLowerCase()}`,
+      `${error ? `<div class="banner banner-danger" role="alert"><div>${esc(error)}</div></div>` : ""}
+       <div class="form-grid tl-form">${fields.map((f) => tlFieldHtml(f, rec)).join("")}</div>`,
+      `${id ? `<button class="btn ${confirmDelete ? "btn-danger" : "btn-ghost"} tl-delete" type="button" id="tl-delete">${confirmDelete ? "Confirmar eliminación" : "Eliminar"}</button>` : ""}
+       <button class="btn btn-secondary" type="button" data-close-modal>Cancelar</button>
+       <button class="btn btn-primary" type="button" id="tl-save">Guardar</button>`
+    );
+    const el = focusId && document.getElementById(focusId);
+    if (el) el.focus();
+  }
+
+  function saveTimelineRecord() {
+    const p = activePatient();
+    const { kind, id, rec } = ui.tlEdit;
+    const cfg = TL.TIMELINES[kind];
+    const visible = cfg.fields.filter((f) => !f.showIf || f.showIf(rec));
+    const missing = visible.filter((f) => f.required && (rec[f.key] === "" || rec[f.key] === undefined));
+    if (missing.length) {
+      ui.tlEdit.error = `Falta completar: ${missing.map((f) => f.label).join(", ")}.`;
+      renderTimelineEditor(`tlf-${missing[0].key}`);
+      return;
+    }
+    // Lo que quedó oculto por una respuesta no se guarda (cero datos huérfanos).
+    cfg.fields.filter((f) => f.showIf && !f.showIf(rec)).forEach((f) => { rec[f.key] = ""; });
+    cfg.normalize(rec, p);
+    const arr = p.hosp[cfg.list] || (p.hosp[cfg.list] = []);
+    if (id) arr[arr.findIndex((r) => r.id === id)] = rec;
+    else { rec.id = `${kind}-${Date.now()}`; arr.push(rec); }
+    saveState();
+    logAudit(`${id ? "Edición" : "Alta"} en ${cfg.title}`, `${p.id} (${p.fullName})`, `${cfg.item} del día ${rec.day !== undefined ? rec.day : rec.insertDay}`);
+    ui.tlEdit = null;
+    closeModal();
+    toast(`${cfg.item.charAt(0).toUpperCase() + cfg.item.slice(1)} guardado; totales recalculados.`);
+    render();
+  }
+
+  function deleteTimelineRecord() {
+    if (!ui.tlEdit.confirmDelete) { ui.tlEdit.confirmDelete = true; renderTimelineEditor("tl-delete"); return; }
+    const p = activePatient();
+    const { kind, id } = ui.tlEdit;
+    const cfg = TL.TIMELINES[kind];
+    const rec = (p.hosp[cfg.list] || []).find((r) => r.id === id);
+    p.hosp[cfg.list] = (p.hosp[cfg.list] || []).filter((r) => r.id !== id);
+    saveState();
+    logAudit(`Baja en ${cfg.title}`, `${p.id} (${p.fullName})`, `${cfg.item} del día ${rec ? (rec.day !== undefined ? rec.day : rec.insertDay) : "?"} eliminado`);
+    ui.tlEdit = null;
+    closeModal();
+    toast(`${cfg.item.charAt(0).toUpperCase() + cfg.item.slice(1)} eliminado.`);
+    render();
+  }
+
+  // ---- Tablas de controles seriados (evaluación nutricional y exámenes quincenales) ----
+  function seriesHtml(which, p) {
+    const cfg = which === "growth" ? TL.GROWTH : TL.LABS;
+    const canEdit = activeRole().permissions.editClinical;
+    const data = p.hosp[cfg.store] || {};
+    const stay = ENG.getPatientStayDays(p);
+    const rows = cfg.rows.map((r) => Object.assign({}, r, { t: r.target(p) })).filter((r) => r.t !== null);
+    const vel = which === "growth" ? TL.growthVelocities(p) : {};
+    const dis = canEdit ? "" : "disabled";
+    const outOfWindow = [];
+    const body = rows.map((r) => {
+      const c = data[r.id] || {};
+      const future = r.t > stay && !c.date;
+      let warn = "";
+      if (cfg.window && c.date) {
+        const delta = TL.dayOf(p, c.date) - r.t;
+        if (Math.abs(delta) > cfg.window) {
+          warn = `Tomado el día ${TL.dayOf(p, c.date)}: fuera de la ventana ± ${cfg.window} días`;
+          outOfWindow.push(r.label);
+        }
+      }
+      const v = vel[r.id] || {};
+      const cell = (key) => `<td><input class="input input-cell num" type="number" step="any" aria-label="${esc(r.label)} · ${esc(cfg.inputs.find((i) => i[0] === key)[1])}" data-series="${which}" data-row="${r.id}" data-key="${key}" value="${esc(c[key] ?? "")}" ${dis} /></td>`;
+      return `
+        <tr class="${future ? "is-future" : ""}${warn ? " has-issue" : ""}">
+          <th scope="row"><span>${esc(r.label)}</span><span class="field-hint">esperado ${esc(ENG.fmtDate(TL.isoOf(p, r.t)))}</span></th>
+          <td><input class="input input-cell" type="date" aria-label="${esc(r.label)} · fecha" data-series="${which}" data-row="${r.id}" data-key="date" value="${esc(c.date || "")}" ${dis} />${warn ? `<span class="cell-warn">${esc(warn)}</span>` : ""}</td>
+          ${cfg.inputs.map(([key]) => cell(key)).join("")}
+          ${which === "growth" ? `<td class="num calc">${v.gkgd ?? "—"}</td><td class="num calc">${v.gweek ?? "—"}</td><td class="num calc">${v.lweek ?? "—"}</td><td class="num calc">${v.hcweek ?? "—"}</td>` : ""}
+        </tr>`;
+    }).join("");
+    const head = `<tr><th>Control</th><th>Fecha</th>${cfg.inputs.map(([, l, u]) => `<th>${esc(l)}${u ? `<span class="th-unit">${esc(u)}</span>` : ""}</th>`).join("")}${which === "growth" ? `<th class="calc">Ganancia<span class="th-unit">g/kg/día</span></th><th class="calc">Ganancia<span class="th-unit">g/semana</span></th><th class="calc">Talla<span class="th-unit">cm/semana</span></th><th class="calc">CC<span class="th-unit">cm/semana</span></th>` : ""}</tr>`;
+    return `
+      <section class="panel" id="series-${which}">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">${which === "growth" ? "Evaluación nutricional seriada" : "Exámenes quincenales del prematuro"}</h2>
+            <p class="panel-sub">${which === "growth"
+              ? "Los z-score se copian de la calculadora Fenton; las velocidades (columnas sombreadas) se calculan contra el control anterior o el nacimiento"
+              : `Cada control tiene su día esperado con margen de ± ${cfg.window} días; fuera de la ventana el dato vale pero no es comparable`}</p>
+          </div>
+        </div>
+        <div class="panel-body tight">
+          ${outOfWindow.length ? `<div class="banner banner-warn"><div>Fuera de la ventana: ${esc(outOfWindow.join(", "))}.</div></div>` : ""}
+          <div class="table-wrap series-wrap"><table class="clinical-table series-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+        </div>
+      </section>`;
+  }
+
+  // Panel de una pestaña: cronología o tabla seriada.
+  function hospPanelHtml(id, p) {
+    return id === "growth" || id === "labs" ? seriesHtml(id, p) : timelineHtml(id, p);
+  }
 
   // ===================== HOSPITALIZACIÓN Y EPICRISIS (docs/08 §3) =====================
   // Una pestaña por sistema. «panels» son las cronologías del sistema; «panelWhen» la pregunta
   // que las habilita (como en la referencia: con «Sí» aparece el registro de episodios).
   const HE_TABS = [
     { id: "resumen", label: "Resumen" },
-    { id: "respiratorio", label: "Respiratorio", panels: ["respiratorio"], panelsFirst: true },
+    { id: "respiratorio", label: "Respiratorio", panels: [{ id: "resp", before: true }] },
     { id: "cardio", label: "Cardiovascular" },
-    { id: "infeccioso", label: "Infeccioso", panels: ["infeccioso"], panelWhen: "iaas" },
-    { id: "nutricion", label: "Nutrición y crecimiento", panels: ["nutricion"], panelsFirst: true },
-    { id: "prematurez", label: "Prematurez", applies: "preterm", panels: ["rop"], panelWhen: "ropScreening" },
+    { id: "infeccioso", label: "Infeccioso", panels: [{ id: "iaas", when: "iaas" }] },
+    { id: "nutricion", label: "Nutrición y crecimiento", panels: [{ id: "nutr", before: true }, { id: "growth", when: "growthSeries" }] },
+    { id: "prematurez", label: "Prematurez", applies: "preterm", panels: [{ id: "labs", when: "biweeklyLabs" }, { id: "rop", when: "ropScreening" }] },
     { id: "neuro", label: "Neurológico" },
-    { id: "hemato", label: "Hematología", panels: ["transfusiones"], panelWhen: "transfusionNeeded" },
-    { id: "accesos", label: "Accesos vasculares", panels: ["cateteres"] },
-    { id: "procedimientos", label: "Procedimientos", panels: ["cirugias"], panelWhen: "surgeryDuring" },
+    { id: "hemato", label: "Hematología", panels: [{ id: "tx", when: "transfusionNeeded" }] },
+    { id: "accesos", label: "Accesos vasculares", panels: [{ id: "cath" }] },
+    { id: "procedimientos", label: "Procedimientos", panels: [{ id: "surg", when: "surgeryDuring" }] },
     { id: "epicrisis", label: "Epicrisis y egreso" }
   ];
 
@@ -1217,9 +1198,10 @@
       return `<div class="empty-state"><strong>No aplica a este paciente</strong>Se registra en menores de 32 semanas o de 1.500 g; nació con ${esc(ENG.fmtGa(p.gaWeeks, p.gaDays))} semanas y ${esc(ENG.fmtWeight(p.birthWeight, "peso sin dato"))}.</div>`;
     }
     const questions = tabSections(p, tab.id).map((sec) => schemaSectionHtml(sec, p, canEdit, {})).join("");
-    const showPanels = tab.panels && (!tab.panelWhen || p.hosp[tab.panelWhen] === "Sí");
-    const panels = showPanels ? tab.panels.map(hospPanelsHtml).join("") : "";
-    return tab.panelsFirst ? panels + questions : questions + panels;
+    // Cada registro aparece cuando la pregunta que lo habilita vale «Sí» (como en la referencia).
+    const shown = (tab.panels || []).filter((x) => !x.when || p.hosp[x.when] === "Sí");
+    const panels = (before) => shown.filter((x) => !!x.before === before).map((x) => hospPanelHtml(x.id, p)).join("");
+    return panels(true) + questions + panels(false);
   }
 
   function heSummaryHtml(p) {
@@ -1310,6 +1292,9 @@
     const diffs = ENG.computeDraftDiff(p, "epicrisis");
     const epiSigned = !!p.epicrisisDraft.validated;
     const epiMissing = epicrisisMissingItems(p);
+    // Variables núcleo del egreso que siguen sin respuesta, con enlace a cada campo.
+    const epiPending = isActive(p) ? [] : SCHEMA.DISCHARGE_SECTIONS.flatMap((sec) => sec.fields)
+      .filter((f) => f.core && SCHEMA.conditionMet(p, f) && SCHEMA.readField(p, f) === "" && !["date", "condition"].includes(f.key));
 
     return `
       <div class="page-header">
@@ -1346,8 +1331,14 @@
             <div class="banner banner-ok"><div>Epicrisis validada por <strong>${esc(p.epicrisisDraft.validatedBy)}</strong> el <span class="mono">${esc(ENG.fmtDate(p.epicrisisDraft.validatedAt))}</span>. Documento de solo lectura.</div></div>
           ` : ""}
 
-          ${!epiSigned && epiMissing.length ? `
-            <div class="banner banner-warn"><div>Antes de validar falta: ${epiMissing.map(esc).join(" · ")}.</div></div>
+          ${!epiSigned && (epiMissing.length || epiPending.length) ? `
+            <div class="banner banner-warn epi-check">
+              <div>
+                ${epiMissing.length ? `<p><strong>Para poder firmar falta:</strong> ${epiMissing.map(esc).join(" · ")}.</p>` : ""}
+                ${epiPending.length ? `<p><strong>Sin responder</strong> (no impiden firmar, pero quedan como deuda de registro):</p>
+                  <ul class="goto-list">${epiPending.map((f) => `<li><button class="link-btn" type="button" data-goto-field="${esc(f.key)}">${esc(f.label)}</button></li>`).join("")}</ul>` : ""}
+              </div>
+            </div>
           ` : ""}
 
           ${draftVersionsHtml("epicrisis", p.epicrisisDraft)}
@@ -2486,6 +2477,32 @@
       };
     }
 
+    // Tablas de controles seriados: se guarda al salir de cada celda.
+    main.querySelectorAll("[data-series]").forEach((el) => {
+      el.onchange = () => {
+        const p = activePatient();
+        const store = el.getAttribute("data-series") === "growth" ? TL.GROWTH.store : TL.LABS.store;
+        const row = el.getAttribute("data-row");
+        const key = el.getAttribute("data-key");
+        const bag = p.hosp[store] || (p.hosp[store] = {});
+        const rec = bag[row] || (bag[row] = {});
+        rec[key] = el.type === "number" ? (el.value === "" ? "" : Number(el.value)) : el.value;
+        saveState();
+        // Se redibuja cuando el foco ya pasó a la celda siguiente (Tab sigue avanzando).
+        setTimeout(() => {
+          const a = document.activeElement;
+          const sel = a && a.dataset && a.dataset.series ? `[data-series="${a.dataset.series}"][data-row="${a.dataset.row}"][data-key="${a.dataset.key}"]` : null;
+          const scroll = document.querySelector(`#series-${el.getAttribute("data-series")} .series-wrap`);
+          const left = scroll ? scroll.scrollLeft : 0;
+          render();
+          const wrap = document.querySelector(`#series-${el.getAttribute("data-series")} .series-wrap`);
+          if (wrap) wrap.scrollLeft = left;
+          const again = sel && document.querySelector(sel);
+          if (again) again.focus({ preventScroll: true });
+        }, 0);
+      };
+    });
+
     // Hospitalización y epicrisis: búsqueda en la lista de pacientes
     const heSearch = document.getElementById("he-search");
     if (heSearch) {
@@ -2742,125 +2759,6 @@
       };
     }
 
-    // Add timeline events modals
-    const bAddResp = document.getElementById("btn-add-resp");
-    if (bAddResp) {
-      bAddResp.onclick = () => {
-        const p = activePatient();
-        const nextDay = ENG.getPatientStayDays(p);
-        openModal(
-          "Agregar cambio a línea de tiempo respiratoria",
-          `<div class="form-grid">
-            <div class="field"><label for="mr-day">Día de vida (DDV)</label><input class="input num" id="mr-day" type="number" min="0" value="${nextDay}" /></div>
-            <div class="field"><label for="mr-ev">Evento</label><input class="input" id="mr-ev" value="Destete / ajuste de soporte" /></div>
-            <div class="field"><label for="mr-mod">Modalidad</label><select class="select" id="mr-mod">${DATA.RESP_MODALITIES.map((m) => `<option value="${m}">${m}</option>`).join("")}</select></div>
-            <div class="field"><label for="mr-fio2">FiO2 (%)</label><input class="input num" id="mr-fio2" type="number" min="21" max="100" value="25" /></div>
-            <div class="field"><label for="mr-peep">PEEP (opcional)</label><input class="input num" id="mr-peep" type="number" placeholder="Ej. 5" /></div>
-            <div class="field"><label for="mr-flow">Flujo L/min (opcional)</label><input class="input num" id="mr-flow" type="number" step="0.5" placeholder="Ej. 1.5" /></div>
-          </div>`,
-          `<button class="btn btn-secondary" type="button" data-close-modal>Cancelar</button>
-           <button class="btn btn-primary" type="button" id="confirm-add-resp">Guardar cambio</button>`
-        );
-      };
-    }
-
-    const bAddNutr = document.getElementById("btn-add-nutr");
-    if (bAddNutr) {
-      bAddNutr.onclick = () => {
-        const p = activePatient();
-        openModal(
-          "Agregar evento nutricional",
-          `<div class="form-grid">
-            <div class="field"><label for="mn-day">DDV</label><input class="input num" id="mn-day" type="number" min="0" value="${ENG.getPatientStayDays(p)}" /></div>
-            <div class="field"><label for="mn-route">Vía</label><select class="select" id="mn-route"><option value="Enteral">Enteral</option><option value="Parenteral">Parenteral</option><option value="Suplementos">Suplementos</option></select></div>
-            <div class="field"><label for="mn-ev">Evento</label><input class="input" id="mn-ev" placeholder="Ej. Alcanza 100 cc/kg/d" /></div>
-            <div class="field"><label for="mn-milk">Tipo de leche</label><input class="input" id="mn-milk" placeholder="Leche materna / Fórmula" /></div>
-            <div class="field"><label for="mn-cc">Aporte (cc/kg/d)</label><input class="input num" id="mn-cc" type="number" placeholder="100" /></div>
-            <div class="field"><label for="mn-det">Detalle</label><input class="input" id="mn-det" placeholder="Observaciones" /></div>
-          </div>`,
-          `<button class="btn btn-secondary" type="button" data-close-modal>Cancelar</button>
-           <button class="btn btn-primary" type="button" id="confirm-add-nutr">Guardar evento</button>`
-        );
-      };
-    }
-
-    const bAddIaas = document.getElementById("btn-add-iaas");
-    if (bAddIaas) {
-      bAddIaas.onclick = () => {
-        const p = activePatient();
-        openModal(
-          "Agregar episodio infeccioso / IAAS",
-          `<div class="form-grid">
-            <div class="field"><label for="mi-day">DDV</label><input class="input num" id="mi-day" type="number" min="0" value="${ENG.getPatientStayDays(p)}" /></div>
-            <div class="field"><label for="mi-syn">Síndrome</label><input class="input" id="mi-syn" value="Sepsis tardía sospechada" /></div>
-            <div class="field"><label for="mi-foc">Foco / muestra</label><input class="input" id="mi-foc" value="Hemocultivo" /></div>
-            <div class="field"><label for="mi-germ">Germen (catálogo)</label><select class="select" id="mi-germ">${DATA.MICROORGANISMS.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join("")}</select></div>
-            <div class="field"><label for="mi-abx1">Antibiótico 1</label><select class="select" id="mi-abx1">${DATA.ANTIBIOTICS.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join("")}</select></div>
-            <div class="field"><label for="mi-abx2">Antibiótico 2</label><select class="select" id="mi-abx2"><option value="">Ninguno</option>${DATA.ANTIBIOTICS.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join("")}</select></div>
-            <div class="field"><label for="mi-days">Duración (días)</label><input class="input num" id="mi-days" type="number" value="7" /></div>
-            <div class="field"><label for="mi-cath">Asociado a catéter</label><select class="select" id="mi-cath"><option value="No">No</option><option value="Sí">Sí</option></select></div>
-          </div>`,
-          `<button class="btn btn-secondary" type="button" data-close-modal>Cancelar</button>
-           <button class="btn btn-primary" type="button" id="confirm-add-iaas">Guardar episodio</button>`
-        );
-      };
-    }
-
-    const bAddCath = document.getElementById("btn-add-cath");
-    if (bAddCath) {
-      bAddCath.onclick = () => {
-        openModal(
-          "Agregar acceso vascular central",
-          `<div class="form-grid">
-            <div class="field"><label for="mc-type">Tipo</label><select class="select" id="mc-type"><option value="CVU">CVU</option><option value="CAU">CAU</option><option value="PICC">PICC</option><option value="CVC">CVC</option></select></div>
-            <div class="field"><label for="mc-in">DDV colocación</label><input class="input num" id="mc-in" type="number" value="1" /></div>
-            <div class="field"><label for="mc-out">DDV retiro (vacío si activo)</label><input class="input num" id="mc-out" type="number" placeholder="Ej. 12" /></div>
-            <div class="field"><label for="mc-site">Sitio anatómico</label><input class="input" id="mc-site" placeholder="Ej. MSD basílica" /></div>
-            <div class="field"><label for="mc-rea">Motivo de retiro</label><input class="input" id="mc-rea" value="Fin de uso" /></div>
-            <div class="field"><label for="mc-comp">Complicación</label><input class="input" id="mc-comp" value="Ninguna" /></div>
-          </div>`,
-          `<button class="btn btn-secondary" type="button" data-close-modal>Cancelar</button>
-           <button class="btn btn-primary" type="button" id="confirm-add-cath">Guardar catéter</button>`
-        );
-      };
-    }
-
-    const bAddTx = document.getElementById("btn-add-tx");
-    if (bAddTx) {
-      bAddTx.onclick = () => {
-        openModal(
-          "Agregar transfusión",
-          `<div class="form-grid">
-            <div class="field"><label for="mt-day">DDV</label><input class="input num" id="mt-day" type="number" value="${ENG.getPatientStayDays(activePatient())}" /></div>
-            <div class="field"><label for="mt-comp">Hemocomponente</label><select class="select" id="mt-comp"><option value="Glóbulos rojos desplematizados">Glóbulos rojos desplematizados</option><option value="Plaquetas">Plaquetas</option><option value="Plasma fresco congelado">Plasma fresco congelado</option></select></div>
-            <div class="field"><label for="mt-ind">Indicación</label><input class="input" id="mt-ind" value="Anemia del prematuro" /></div>
-            <div class="field"><label for="mt-vol">Volumen (mL/kg)</label><input class="input num" id="mt-vol" type="number" value="15" /></div>
-            <div class="field"><label for="mt-reac">Reacción adversa</label><select class="select" id="mt-reac"><option value="No">No</option><option value="Sí">Sí</option></select></div>
-          </div>`,
-          `<button class="btn btn-secondary" type="button" data-close-modal>Cancelar</button>
-           <button class="btn btn-primary" type="button" id="confirm-add-tx">Guardar transfusión</button>`
-        );
-      };
-    }
-
-    const bAddRop = document.getElementById("btn-add-rop");
-    if (bAddRop) {
-      bAddRop.onclick = () => {
-        openModal(
-          "Agregar control oftalmológico (ROP)",
-          `<div class="form-grid">
-            <div class="field"><label for="mrop-day">DDV</label><input class="input num" id="mrop-day" type="number" value="${ENG.getPatientStayDays(activePatient())}" /></div>
-            <div class="field"><label for="mrop-st">Estadio (0–5)</label><input class="input num" id="mrop-st" type="number" min="0" max="5" value="1" /></div>
-            <div class="field"><label for="mrop-zn">Zona</label><select class="select" id="mrop-zn"><option value="I">I</option><option value="II" selected>II</option><option value="III">III</option></select></div>
-            <div class="field"><label for="mrop-pl">Enfermedad Plus</label><select class="select" id="mrop-pl"><option value="No">No</option><option value="Sí">Sí</option></select></div>
-            <div class="field"><label for="mrop-tx">Conducta / Tratamiento</label><input class="input" id="mrop-tx" value="Control semanal" /></div>
-          </div>`,
-          `<button class="btn btn-secondary" type="button" data-close-modal>Cancelar</button>
-           <button class="btn btn-primary" type="button" id="confirm-add-rop">Guardar control</button>`
-        );
-      };
-    }
-
     // Import controls
     const bDlTpl = document.getElementById("btn-dl-template");
     if (bDlTpl) {
@@ -3089,6 +2987,38 @@
       return;
     }
 
+    // Cronologías: alta, edición y baja
+    const tlAdd = t.closest("[data-tl-add]");
+    if (tlAdd) { openTimelineEditor(tlAdd.getAttribute("data-tl-add"), null); return; }
+    const tlEdit = t.closest("[data-tl-edit]");
+    if (tlEdit) { openTimelineEditor(tlEdit.getAttribute("data-tl-edit"), tlEdit.getAttribute("data-tl-id")); return; }
+    const tile = t.closest("[data-tlf-tile]");
+    if (tile && ui.tlEdit) {
+      const key = tile.getAttribute("data-tlf-tile");
+      ui.tlEdit.rec[key] = tile.getAttribute("data-val");
+      ui.tlEdit.error = "";
+      renderTimelineEditor();
+      const again = document.querySelector(`[data-tlf-tile="${key}"][data-val="${tile.getAttribute("data-val")}"]`);
+      if (again) again.focus();
+      return;
+    }
+    if (t.closest("#tl-save") && ui.tlEdit) { saveTimelineRecord(); return; }
+    if (t.closest("#tl-delete") && ui.tlEdit) { deleteTimelineRecord(); return; }
+
+    // Lista de faltantes de la epicrisis: lleva al campo.
+    const goto = t.closest("[data-goto-field]");
+    if (goto) {
+      const el = document.getElementById(`fx-${goto.getAttribute("data-goto-field")}`)
+        || document.querySelector(`[data-yn="${goto.getAttribute("data-goto-field")}"]`);
+      if (el) {
+        const det = el.closest("details");
+        if (det) det.open = true;
+        el.scrollIntoView({ block: "center" });
+        el.focus({ preventScroll: true });
+      }
+      return;
+    }
+
     const hePt = t.closest("[data-he-patient]");
     if (hePt) { ui.selectedPatientId = hePt.getAttribute("data-he-patient"); ui.dxSearch = ""; render(); return; }
 
@@ -3283,130 +3213,22 @@
       return;
     }
 
-    if (t.id === "confirm-add-resp") {
-      const p = activePatient();
-      if (!p) return;
-      p.hosp.respEvents.push({
-        id: "r-" + Date.now(),
-        day: Number(document.getElementById("mr-day")?.value || 0),
-        date: ENG.REF_DATE,
-        time: "",
-        event: document.getElementById("mr-ev")?.value.trim() || "Ajuste soporte",
-        modality: document.getElementById("mr-mod")?.value || "O2",
-        fio2: Number(document.getElementById("mr-fio2")?.value || 21),
-        peep: document.getElementById("mr-peep")?.value || "",
-        flow: document.getElementById("mr-flow")?.value || ""
-      });
-      saveState();
-      logAudit("Evento respiratorio", `${p.id} (${p.fullName})`, `Nuevo cambio agregado en línea de tiempo`);
-      closeModal();
-      toast("Cambio respiratorio agregado; totales y DBP recalculados.");
-      render();
-      return;
-    }
+  });
 
-    if (t.id === "confirm-add-nutr") {
-      const p = activePatient();
-      if (!p) return;
-      p.hosp.nutrEvents.push({
-        id: "n-" + Date.now(),
-        day: Number(document.getElementById("mn-day")?.value || 0),
-        date: ENG.REF_DATE,
-        route: document.getElementById("mn-route")?.value || "Enteral",
-        event: document.getElementById("mn-ev")?.value.trim() || "Actualización nutricional",
-        milk: document.getElementById("mn-milk")?.value.trim() || "",
-        ccKg: Number(document.getElementById("mn-cc")?.value || 0),
-        detail: document.getElementById("mn-det")?.value.trim() || ""
-      });
-      saveState();
-      logAudit("Evento nutricional", `${p.id} (${p.fullName})`, "Nuevo evento nutricional agregado");
-      closeModal();
-      toast("Evento nutricional agregado.");
-      render();
-      return;
-    }
-
-    if (t.id === "confirm-add-iaas") {
-      const p = activePatient();
-      if (!p) return;
-      p.hosp.iaasEpisodes.push({
-        id: "i-" + Date.now(),
-        day: Number(document.getElementById("mi-day")?.value || 0),
-        date: ENG.REF_DATE,
-        syndrome: document.getElementById("mi-syn")?.value.trim() || "IAAS",
-        cultureConfirmed: "Sí",
-        focus: document.getElementById("mi-foc")?.value.trim() || "",
-        germ: document.getElementById("mi-germ")?.value || "",
-        abx1: document.getElementById("mi-abx1")?.value || "",
-        abx2: document.getElementById("mi-abx2")?.value || "",
-        days: Number(document.getElementById("mi-days")?.value || 7),
-        catheterRelated: document.getElementById("mi-cath")?.value || "No"
-      });
-      saveState();
-      logAudit("Episodio IAAS", `${p.id} (${p.fullName})`, "Episodio registrado en catálogo cerrado");
-      closeModal();
-      toast("Episodio infeccioso registrado.");
-      render();
-      return;
-    }
-
-    if (t.id === "confirm-add-cath") {
-      const p = activePatient();
-      if (!p) return;
-      p.hosp.catheters.push({
-        id: "c-" + Date.now(),
-        type: document.getElementById("mc-type")?.value || "PICC",
-        insertDay: Number(document.getElementById("mc-in")?.value || 0),
-        removeDay: document.getElementById("mc-out")?.value === "" ? "" : Number(document.getElementById("mc-out")?.value),
-        site: document.getElementById("mc-site")?.value.trim() || "",
-        reason: document.getElementById("mc-rea")?.value.trim() || "",
-        complication: document.getElementById("mc-comp")?.value.trim() || "Ninguna"
-      });
-      saveState();
-      logAudit("Acceso vascular", `${p.id} (${p.fullName})`, "Catéter central agregado");
-      closeModal();
-      toast("Catéter registrado; días-catéter actualizados.");
-      render();
-      return;
-    }
-
-    if (t.id === "confirm-add-tx") {
-      const p = activePatient();
-      if (!p) return;
-      p.hosp.transfusions.push({
-        id: "t-" + Date.now(),
-        day: Number(document.getElementById("mt-day")?.value || 0),
-        component: document.getElementById("mt-comp")?.value || "",
-        indication: document.getElementById("mt-ind")?.value.trim() || "",
-        mlKg: Number(document.getElementById("mt-vol")?.value || 15),
-        reaction: document.getElementById("mt-reac")?.value || "No"
-      });
-      saveState();
-      logAudit("Transfusión", `${p.id} (${p.fullName})`, "Hemocomponente registrado");
-      closeModal();
-      toast("Transfusión registrada.");
-      render();
-      return;
-    }
-
-    if (t.id === "confirm-add-rop") {
-      const p = activePatient();
-      if (!p) return;
-      p.hosp.ropExams.push({
-        id: "rop-" + Date.now(),
-        day: Number(document.getElementById("mrop-day")?.value || 0),
-        stage: Number(document.getElementById("mrop-st")?.value || 0),
-        zone: document.getElementById("mrop-zn")?.value || "II",
-        plus: document.getElementById("mrop-pl")?.value || "No",
-        treatment: document.getElementById("mrop-tx")?.value.trim() || "Control"
-      });
-      saveState();
-      logAudit("Control ROP", `${p.id} (${p.fullName})`, "Fondo de ojo registrado");
-      closeModal();
-      toast("Control ROP guardado; peor estadio actualizado.");
-      render();
-      return;
-    }
+  // Campos del editor de cronologías: los desplegables pueden abrir o cerrar otros campos.
+  document.addEventListener("change", (e) => {
+    const f = e.target.closest && e.target.closest("[data-tlf]");
+    if (!f || !ui.tlEdit) return;
+    const field = TL.TIMELINES[ui.tlEdit.kind].fields.find((x) => x.key === f.getAttribute("data-tlf"));
+    ui.tlEdit.rec[field.key] = field.type === "number" ? (f.value === "" ? "" : Number(f.value)) : f.value;
+    ui.tlEdit.error = "";
+    if (field.type === "select" || field.type === "date") renderTimelineEditor(f.id);
+  });
+  document.addEventListener("input", (e) => {
+    const f = e.target.closest && e.target.closest("[data-tlf]");
+    if (!f || !ui.tlEdit || f.tagName === "SELECT") return;
+    const field = TL.TIMELINES[ui.tlEdit.kind].fields.find((x) => x.key === f.getAttribute("data-tlf"));
+    ui.tlEdit.rec[field.key] = field.type === "number" ? (f.value === "" ? "" : Number(f.value)) : f.value;
   });
 
   // Static shell buttons
@@ -3417,7 +3239,7 @@
   document.getElementById("close-rail-btn").onclick = closeDrawer;
   document.getElementById("drawer-scrim").onclick = closeDrawer;
   document.getElementById("reset-demo-btn").onclick = () => {
-    state = DATA.createSeedState();
+    state = prepareState(DATA.createSeedState());
     hydrateInitialDrafts();
     ui.selectedPatientId = state.patients[0].id;
     ui.activeBatch = null;

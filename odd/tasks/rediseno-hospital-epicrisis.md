@@ -28,19 +28,19 @@ Base `main` · rama `rediseno-hospital-epicrisis` · commit y merge sujetos a OK
 - **Blocker:** none
 
 ### TASK-003 — Sección Hospitalización y epicrisis
-- **State:** IN_PROGRESS
+- **State:** DONE
 - **Depends on:** TASK-002
 - **Owner:** orchestrator
 - **Acceptance:** Desde la barra lateral se abre la sección con la lista de pacientes (búsqueda y filtro Internados / Egresados / Todos) y, al elegir uno, su cabecera y las pestañas Resumen, Respiratorio, Cardiovascular, Infeccioso, Nutrición y crecimiento, Prematurez, Neurológico, Hematología, Accesos vasculares, Procedimientos y Epicrisis y egreso. Cada campo de docs/07 §5 (adaptado a Argentina) existe en su pestaña con la misma rama condicional. Los Sí/No se responden con botones segmentados (No · Sí · Otro). Prematurez queda atenuada con su motivo en ≥ 32 sem y ≥ 1.500 g. El fallecido muestra la rama de fallecimiento y oculta condición al alta y pesquisas. La epicrisis lista los faltantes con enlace antes de firmar. Un rol de solo consulta ve todo sin poder editar.
-- **Evidence:** 2026-11-27 · Navegador (:5180). 30 pacientes × 11 pestañas sin contenido vacío ni errores de consola. Neumotórax «Sí» abre «Requirió drenaje pleural», «No» la cierra y el foco queda en el botón. Fallecido (Bautista Silva): egreso muestra solo fecha, condición, causas, lugar, autopsia e indicaciones. Término 41+0: Prematurez «No aplica» con motivo. Dirección (solo consulta): 6/6 Sí/No deshabilitados, sin «Agregar cambio» ni «Nuevo ingreso». Inicio, Ingreso, Importar, Estadísticas, Exportar, Configuración, Administración y la ficha de ingreso abren sin errores. Pendiente para cerrar: enlaces desde la lista de faltantes de la epicrisis a cada campo; tablas seriadas (TASK-004).
+- **Evidence:** 2026-11-27 · Navegador (:5180). 30 pacientes × 11 pestañas sin contenido vacío ni errores de consola. Neumotórax «Sí» abre «Requirió drenaje pleural», «No» la cierra y el foco queda en el botón. Fallecido (Bautista Silva): egreso muestra solo fecha, condición, causas, lugar, autopsia e indicaciones. Término 41+0: Prematurez «No aplica» con motivo. Dirección (solo consulta): 6/6 Sí/No deshabilitados, sin «Agregar cambio» ni «Nuevo ingreso». Inicio, Ingreso, Importar, Estadísticas, Exportar, Configuración, Administración y la ficha de ingreso abren sin errores. Cierre 2026-11-27 (corte 2): en un egresado sin firmar, «Estado al egreso» de la lista de faltantes lleva el foco a fx-healthStatus; un internado no lista faltantes de egreso.
 - **Blocker:** none
 
 ### TASK-004 — Cronologías editables y tablas seriadas
-- **State:** PLANNED
+- **State:** DONE
 - **Depends on:** TASK-003
 - **Owner:** orchestrator
 - **Acceptance:** Cada cronología admite alta, edición y baja con los campos de docs/07 §2; la respiratoria valida modalidad faltante con «Ir al cambio»; la evaluación nutricional calcula g/kg/día, g/semana y cm/semana; los quincenales avisan fuera de la ventana ± 4 días.
-- **Evidence:** pendiente
+- **Evidence:** 2026-11-27 · Navegador (:5180). Respiratoria (Francisco Herrera): CN muestra «Flujo» y no «PEEP»; «Fecha y hora» muestra «Hora»; sin fecha → «Falta completar: Fecha.»; cambio sin modalidad → «Cambio 5 (día 23): falta elegir la modalidad respiratoria · Ir al cambio», que abre «Editar cambio»; «Eliminar» pide «Confirmar eliminación»; auditoría registra alta y baja. Las 7 cronologías de Alma Ríos (7/9/2/4/3/3/3 registros) se abren y re-guardan sin errores ni cambios de conteo. Evaluación nutricional: 14 → 28 días = 14,1 g/kg/día y 73 g/semana, igual al cálculo manual (1000·ln(812/667)/14). Quincenales: «Fuera de la ventana: Día 45, Día 90, Día 105» y nota por celda; editar una celda guarda el valor y Tab pasa a la siguiente. Epicrisis generada incluye «Secuencia de soporte: día 0: inicio de soporte → VMC, FiO2 55%; …». 30 pacientes × 11 pestañas sin contenido vacío ni errores; 375 px: scrollWidth 375 en todas las pestañas y en el editor.
 - **Blocker:** none
 
 ### TASK-005 — Inicio, Ingreso, login simulado y Administración
