@@ -77,6 +77,43 @@
     }
   ];
 
+  // Permisos que administra la jefatura (docs/08 §2) y para qué sirve cada rol.
+  const PERMISSIONS = [
+    ["createPatient", "Ingresar pacientes", "Alta rápida y ficha de ingreso"],
+    ["editClinical", "Cargar datos clínicos", "Ficha, sistemas, cronologías y egreso"],
+    ["signDraft", "Firmar", "Validar ingresos y epicrisis"],
+    ["importFiles", "Importar datos", "Planillas y documentos"],
+    ["exportFull", "Exportar la base completa", "Excel maestro y JSON con identificación"],
+    ["admin", "Administrar usuarios", "Altas, bajas, roles y permisos"]
+  ];
+  const ROLE_INFO = {
+    jefatura: "Conduce el servicio: carga, firma y administra usuarios y permisos.",
+    planta: "Atiende y documenta la internación completa; firma ingresos y epicrisis.",
+    guardia: "Ingresa y evoluciona pacientes en la guardia; firma, sin exportar la base completa.",
+    residente: "Carga ingresos y evoluciones; las firma un médico de planta o de guardia.",
+    enfermeria: "Ingresa pacientes y registra soporte, accesos, transfusiones y controles; no firma.",
+    direccion: "Consulta historias, tableros y estadísticas sin modificar nada."
+  };
+  // Nombre de cada rol (la función, no la persona) y orden en que se muestran.
+  const ROLE_LABELS = {
+    jefatura: "Jefatura de Neonatología",
+    planta: "Neonatología de planta",
+    guardia: "Guardia médica",
+    residente: "Residencia",
+    enfermeria: "Enfermería",
+    direccion: "Dirección · solo consulta"
+  };
+  const ROLE_ORDER = ["jefatura", "planta", "guardia", "residente", "enfermeria", "direccion"];
+
+  // Usuarios iniciales además de los perfiles de demostración.
+  const EXTRA_USERS = [
+    { id: "u-residente", name: "Dra. Sofía Ruiz", matricula: "MN 175.033", initials: "SR", roleId: "residente", active: true },
+    { id: "u-enfermeria-2", name: "Lic. Ana Paz", matricula: "ME 51.877", initials: "AP", roleId: "enfermeria", active: true }
+  ];
+  const EXTRA_ROLES = [
+    { id: "residente", label: "Residente", permissions: { createPatient: true, editClinical: true, signDraft: false, importFiles: false, exportFull: false, admin: false } }
+  ];
+
   const SECTORS = [
     { id: "UCIN", name: "UCIN (Cuidados Intensivos)", capacity: 8 },
     { id: "Intermedios", name: "Cuidados Intermedios", capacity: 10 },
@@ -1035,6 +1072,12 @@
 
   global.NEOSALUD_DATA = {
     ROLES,
+    PERMISSIONS,
+    ROLE_INFO,
+    ROLE_LABELS,
+    ROLE_ORDER,
+    EXTRA_USERS,
+    EXTRA_ROLES,
     SECTORS,
     CIE10_CATALOG,
     MICROORGANISMS,

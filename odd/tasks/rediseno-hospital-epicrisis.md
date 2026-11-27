@@ -44,9 +44,9 @@ Base `main` · rama `rediseno-hospital-epicrisis` · commit y merge sujetos a OK
 - **Blocker:** none
 
 ### TASK-005 — Inicio, Ingreso, login simulado y Administración
-- **State:** PLANNED
+- **State:** DONE
 - **Depends on:** TASK-002
 - **Owner:** orchestrator
-- **Acceptance:** Ver docs/08 §2.
-- **Evidence:** pendiente
+- **Acceptance:** Ver docs/08 §2. Al abrir sin sesión se ve solo la pantalla de perfiles con permisos por tarjeta; Inicio muestra indicadores clicables, «Para resolver», actividad y mapa de cunas; Ingreso permite el alta rápida en la página y lista las fichas; Administración (solo con permiso) da de alta, edita, desactiva y reactiva usuarios y cambia permisos con efecto inmediato; la jefatura no puede quitarse la administración ni desactivarse; Configuración tiene el perfil propio y el respaldo. Sin desborde en 375 px.
+- **Evidence:** 2026-11-27 · Navegador (:5180). Sin sesión: barra lateral oculta y 7 tarjetas ordenadas por rol (Jefatura primero), cada una con ✓/— por permiso. Jefa → «Buenas tardes, Dra. Carolina Méndez», 6 indicadores, 6 pendientes, 8 actividades y barra con Administración. Alta de usuario sin nombre bloqueada; «Dr. Martín López · Guardia médica» agregado, desactivado y ausente en la pantalla de perfiles; la sesión propia no tiene «Desactivar»; la casilla de administración de la jefatura está deshabilitada. Quitar «Firmar» a Guardia médica → Dr. Benítez ve «Validar ingreso» deshabilitado (luego restituido). Auditoría: «Cambio de permisos», «Baja de usuario», «Alta de usuario», «Inicio de sesión». Ingreso: sin nombre no crea; «Crear y seguir ingresando» limpia y enfoca el nombre; «Crear y completar la ficha» abre la ficha; búsqueda conserva el foco. Un pendiente de Inicio abre a Sofía Benítez en Respiratorio. Configuración guarda la matrícula propia. 375 px: perfiles, Inicio, Ingreso, Administración (3 pestañas), Configuración y Hospitalización miden 375. Tras «Reiniciar maqueta»: 30 pacientes, 7 usuarios, 8 secciones abren y 30 pacientes × 11 pestañas sin vacíos ni errores de consola.
 - **Blocker:** none

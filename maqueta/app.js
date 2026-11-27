@@ -13,6 +13,8 @@
     heTab: "resumen",         // pestaña de «Hospitalización y epicrisis»
     heFilter: "activos",      // activos | egresados | todos
     heSearch: "",
+    adminTab: "usuarios",
+    ingresoSearch: "",
     patientFilters: { text: "", status: "all", sector: "all", gaGroup: "all" },
     ingresoVarFilter: "",
     collapsedSections: {},
@@ -74,6 +76,17 @@
 
   // Lleva los registros viejos al formato v2 y completa respuestas y controles de la demo.
   function prepareState(st) {
+    if (!st.roles) {
+      st.roles = DATA.ROLES.map((r) => ({ id: r.id, label: r.roleLabel, permissions: Object.assign({}, r.permissions) }))
+        .concat(DATA.EXTRA_ROLES.map((r) => ({ id: r.id, label: r.label, permissions: Object.assign({}, r.permissions) })));
+    }
+    if (!st.users) {
+      st.users = DATA.ROLES.map((r) => ({ id: `u-${r.id}`, name: r.name, matricula: r.matricula, initials: r.initials, roleId: r.id, active: true }))
+        .concat(DATA.EXTRA_USERS.map((u) => Object.assign({}, u)));
+      st.activeUserId = `u-${st.activeRoleId || "planta"}`;
+    }
+    st.roles.forEach((r) => { if (DATA.ROLE_LABELS[r.id]) r.label = DATA.ROLE_LABELS[r.id]; });
+    st.roles.sort((a, b) => DATA.ROLE_ORDER.indexOf(a.id) - DATA.ROLE_ORDER.indexOf(b.id));
     st.patients.forEach((p) => {
       p.hosp = p.hosp || {};
       TL.upgradeRecords(p);
@@ -135,8 +148,29 @@
     } catch (e) { /* ignore quota */ }
   }
 
+  // Perfil activo = usuario de la sesión + permisos de su rol (los administra la jefatura).
+  // Conserva la forma de antes (id del rol, name, roleLabel, initials, matricula, permissions).
+  function activeUser() {
+    return state.users.find((u) => u.id === state.activeUserId && u.active) || state.users.find((u) => u.active) || state.users[0];
+  }
+
+  function roleOf(roleId) {
+    return state.roles.find((r) => r.id === roleId) || state.roles[0];
+  }
+
   function activeRole() {
-    return DATA.ROLES.find((r) => r.id === state.activeRoleId) || DATA.ROLES[0];
+    const u = activeUser();
+    const role = roleOf(u.roleId);
+    return { id: role.id, userId: u.id, name: u.name, matricula: u.matricula, initials: u.initials, roleLabel: role.label, permissions: role.permissions };
+  }
+
+  // Sesión simulada: vive en la pestaña del navegador; al abrir la maqueta se elige un perfil.
+  const SESSION_KEY = "neosalud.maqueta.session";
+  function hasSession() {
+    try { return sessionStorage.getItem(SESSION_KEY) === "1"; } catch (e) { return true; }
+  }
+  function setSession(on) {
+    try { if (on) sessionStorage.setItem(SESSION_KEY, "1"); else sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* sin almacenamiento: se trabaja igual */ }
   }
 
   function activePatient() {
@@ -399,108 +433,6 @@
       }
     }
     return issues;
-  }
-
-  function viewUnidad() {
-    const r = activeRole();
-    const q = fold(ui.unitSearch || "");
-    const matches = (p) => !q || fold(`${p.fullName} ${p.id} ${p.hc} ${p.motherName} ${p.motherDni}`).includes(q);
-    const active = state.patients.filter(isActive);
-    const totalBeds = DATA.SECTORS.reduce((a, s) => a + s.capacity, 0);
-    // En el panel solo va lo que requiere una firma; lo incompleto se resume en una línea que resalta las cunas.
-    const todo = active.flatMap((p) => patientIssues(p).filter((i) => i.tone === "action").map((i) => ({ p, ...i })));
-    const withMissing = active.filter((p) => patientIssues(p).some((i) => i.tone === "missing"));
-    const onlyMissing = ui.unitFilter === "missing";
-    const closed = state.patients.filter((p) => !isActive(p) && matches(p))
-      .sort((a, b) => String(b.dischargeDate || "").localeCompare(String(a.dischargeDate || "")));
-
-    const cunaHtml = (p) => {
-      const issue = patientIssues(p)[0];
-      const dol = dayOfLife(p);
-      return `
-        <button class="cuna ${issue ? `has-${issue.tone}` : ""} ${matches(p) && (!onlyMissing || withMissing.includes(p)) ? "" : "is-dimmed"}" type="button" data-open-patient="${esc(p.id)}" data-target-route="${defaultStepFor(p)}">
-          <span class="cuna-name">${esc(p.fullName)}</span>
-          <span class="cuna-facts">${esc(ENG.fmtGa(p.gaWeeks, p.gaDays, "EG s/d"))}${ENG.num(p.gaWeeks) === null ? "" : " sem"}${dol === null ? "" : `, día ${dol}`}</span>
-          <span class="cuna-facts">${esc(ENG.fmtWeight(p.birthWeight, "peso s/d"))}</span>
-          ${issue ? `<span class="cuna-issue tone-${issue.tone}">${esc(issue.text)}</span>` : `<span class="cuna-issue tone-ok">Al día</span>`}
-        </button>`;
-    };
-
-    return `
-      <div class="page-header unit-header">
-        <div>
-          <h1 class="page-title">${active.length} de ${totalBeds} cunas ocupadas</h1>
-          <p class="page-desc">Tocá una cuna para abrir la historia del bebé, o una cuna libre para ingresar a uno nuevo.</p>
-        </div>
-        <div class="page-actions">
-          <input class="input unit-search" id="unit-search" type="search" placeholder="Buscar por nombre, HC o DNI de la madre" value="${esc(ui.unitSearch || "")}" aria-label="Buscar paciente" />
-          ${r.permissions.createPatient ? `<button class="btn btn-primary" type="button" id="btn-new-patient">Ingresar recién nacido</button>` : ""}
-        </div>
-      </div>
-
-      <div class="unit-layout">
-        <div class="unit-map">
-          ${DATA.SECTORS.map((sec) => {
-            const here = active.filter((p) => p.sector === sec.id);
-            const free = Math.max(0, sec.capacity - here.length);
-            return `
-              <section class="sector" aria-labelledby="sec-${esc(sec.id)}">
-                <h2 class="sector-title" id="sec-${esc(sec.id)}">${esc(sec.name)} <span class="sector-count">${here.length} de ${sec.capacity}</span></h2>
-                <div class="cuna-grid">
-                  ${here.map(cunaHtml).join("")}
-                  ${Array.from({ length: free }, () => r.permissions.createPatient
-                    ? `<button class="cuna cuna-free" type="button" data-new-patient-sector="${esc(sec.id)}">Cuna libre<span>Ingresar aquí</span></button>`
-                    : `<div class="cuna cuna-free" aria-label="Cuna libre">Cuna libre</div>`).join("")}
-                </div>
-              </section>`;
-          }).join("")}
-          ${active.some((p) => !p.sector) ? `
-            <section class="sector">
-              <h2 class="sector-title">Sin sector asignado</h2>
-              <div class="cuna-grid">${active.filter((p) => !p.sector).map(cunaHtml).join("")}</div>
-            </section>` : ""}
-        </div>
-
-        <aside class="unit-todo" aria-labelledby="todo-title">
-          <h2 class="aside-title" id="todo-title">Para firmar</h2>
-          ${todo.length ? `
-            <ul class="todo-list">
-              ${todo.map((t) => `
-                <li>
-                  <button class="todo-item" type="button" data-open-patient="${esc(t.p.id)}" data-target-route="${t.route}">
-                    <span class="todo-mark tone-${t.tone}" aria-hidden="true"></span>
-                    <span><strong>${esc(t.p.fullName)}</strong><span class="todo-text">${esc(t.text)}</span></span>
-                  </button>
-                </li>`).join("")}
-            </ul>` : `<p class="field-hint">No hay documentos esperando firma.</p>`}
-          ${withMissing.length ? `
-            <button class="missing-toggle ${onlyMissing ? "is-on" : ""}" type="button" id="btn-unit-missing" aria-pressed="${onlyMissing}">
-              <span class="todo-mark tone-missing" aria-hidden="true"></span>
-              <span>${withMissing.length} ${withMissing.length === 1 ? "bebé tiene" : "bebés tienen"} datos por completar<span class="todo-text">${onlyMissing ? "Mostrar todas las cunas" : "Resaltarlos en el mapa"}</span></span>
-            </button>` : ""}
-        </aside>
-      </div>
-
-      <section class="closed-list" aria-labelledby="closed-title">
-        <h2 class="aside-title" id="closed-title">Egresos y fallecidos (${closed.length})</h2>
-        ${closed.length ? `
-          <div class="table-wrap">
-            <table class="clinical-table rows-clickable">
-              <thead><tr><th>Paciente</th><th>EG</th><th>Peso al nacer</th><th>Egreso</th><th>Condición</th></tr></thead>
-              <tbody>
-                ${closed.map((p) => `
-                  <tr data-open-patient="${esc(p.id)}" data-target-route="epicrisis" tabindex="0">
-                    <td><strong>${esc(p.fullName)}</strong></td>
-                    <td class="num">${esc(ENG.fmtGa(p.gaWeeks, p.gaDays, "—"))}</td>
-                    <td class="num">${esc(ENG.fmtWeight(p.birthWeight, "—"))}</td>
-                    <td class="num">${esc(ENG.fmtDate(p.dischargeDate) || "—")}</td>
-                    <td>${p.status === "fallecido" ? "Fallecido" : esc(ENG.fieldText(p, "condition", "Egresado"))}</td>
-                  </tr>`).join("")}
-              </tbody>
-            </table>
-          </div>` : `<p class="field-hint">Ningún egreso coincide con la búsqueda.</p>`}
-      </section>
-    `;
   }
 
   function fold(t) {
@@ -1242,43 +1174,355 @@
       </div>`;
   }
 
-  // ===================== INGRESO (sección; la versión completa llega en el corte 3) =====================
-  function viewIngresos() {
+  // ===================== LOGIN SIMULADO =====================
+  // Una tarjeta por usuario activo y, debajo, qué puede hacer su rol. En producción se entra
+  // con usuario y contraseña; acá alcanza con elegir el perfil.
+  function permissionSummary(perms) {
+    const can = DATA.PERMISSIONS.filter(([k]) => perms[k]);
+    const cannot = DATA.PERMISSIONS.filter(([k]) => !perms[k]);
+    return { can, cannot };
+  }
+
+  function viewLogin() {
+    const users = state.users.filter((u) => u.active);
+    const order = state.roles.map((r) => r.id);
+    users.sort((a, b) => order.indexOf(a.roleId) - order.indexOf(b.roleId));
+    return `
+      <div class="login">
+        <header class="login-head">
+          <span class="brand-mark login-mark" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span>
+          <div>
+            <h1 class="login-title">NeoSalud · Neonatología</h1>
+            <p class="login-sub">${esc(state.institution?.name || "Servicio de Neonatología")} · Entorno de demostración con datos ficticios</p>
+          </div>
+        </header>
+        <p class="login-lead">Elegí con qué perfil querés entrar. Debajo de cada uno figura qué puede hacer; los permisos los administra la jefatura del servicio.</p>
+        <div class="login-grid">
+          ${users.map((u) => {
+            const role = roleOf(u.roleId);
+            const { can, cannot } = permissionSummary(role.permissions);
+            return `
+            <article class="login-card">
+              <div class="login-card-id">
+                <span class="role-avatar" aria-hidden="true">${esc(u.initials)}</span>
+                <div>
+                  <h2 class="login-name">${esc(u.name)}</h2>
+                  <p class="login-role">${esc(role.label)} <span class="mono">${esc(u.matricula)}</span></p>
+                </div>
+              </div>
+              <p class="login-desc">${esc(DATA.ROLE_INFO[role.id] || "")}</p>
+              <ul class="perm-list" aria-label="Permisos de ${esc(role.label)}">
+                ${can.map(([, l]) => `<li class="perm-yes"><span aria-hidden="true">✓</span>${esc(l)}</li>`).join("")}
+                ${cannot.map(([, l]) => `<li class="perm-no"><span aria-hidden="true">—</span>No: ${esc(l.charAt(0).toLowerCase() + l.slice(1))}</li>`).join("")}
+              </ul>
+              <button class="btn btn-primary login-btn" type="button" data-login-user="${esc(u.id)}">Ingresar como ${esc(u.name.split(" ").slice(0, 2).join(" "))}</button>
+            </article>`;
+          }).join("")}
+        </div>
+      </div>`;
+  }
+
+  // ===================== ADMINISTRACIÓN =====================
+  function viewAdmin() {
+    if (!activeRole().permissions.admin) {
+      return `<div class="empty-state"><strong>Sin permiso</strong>La administración de usuarios es de la jefatura del servicio.</div>`;
+    }
+    const tab = ui.adminTab || "usuarios";
+    const tabs = [["usuarios", "Usuarios"], ["roles", "Roles y permisos"], ["auditoria", "Auditoría"]];
+    let body = "";
+    if (tab === "usuarios") {
+      const me = activeUser();
+      body = `
+        <section class="panel">
+          <div class="panel-head">
+            <div><h2 class="panel-title">Usuarios del servicio</h2><p class="panel-sub">${state.users.filter((u) => u.active).length} activos de ${state.users.length}</p></div>
+            <button class="btn btn-primary btn-sm" type="button" data-user-edit="">Nuevo usuario</button>
+          </div>
+          <div class="panel-body tight"><div class="table-wrap"><table class="clinical-table">
+            <thead><tr><th>Usuario</th><th>Matrícula</th><th>Rol</th><th>Estado</th><th><span class="sr-only">Acciones</span></th></tr></thead>
+            <tbody>${state.users.map((u) => `
+              <tr class="${u.active ? "" : "is-inactive"}">
+                <td><strong>${esc(u.name)}</strong>${u.id === me.id ? ' <span class="status-pill status-hosp">sesión actual</span>' : ""}${u.email ? `<div class="field-hint">${esc(u.email)}</div>` : ""}</td>
+                <td class="mono">${esc(u.matricula || "—")}</td>
+                <td>${esc(roleOf(u.roleId).label)}</td>
+                <td>${u.active ? '<span class="status-pill status-ok">Activo</span>' : '<span class="status-pill status-na">Inactivo</span>'}</td>
+                <td class="tl-actions">
+                  <button class="btn btn-ghost btn-sm" type="button" data-user-edit="${esc(u.id)}">Editar</button>
+                  ${u.id === me.id ? "" : `<button class="btn btn-ghost btn-sm" type="button" data-user-toggle="${esc(u.id)}">${u.active ? "Desactivar" : "Reactivar"}</button>`}
+                </td>
+              </tr>`).join("")}</tbody>
+          </table></div></div>
+        </section>`;
+    } else if (tab === "roles") {
+      body = `
+        <section class="panel">
+          <div class="panel-head"><div><h2 class="panel-title">Roles y permisos</h2><p class="panel-sub">Cada cambio se aplica de inmediato a todos los usuarios del rol y queda en auditoría</p></div></div>
+          <div class="panel-body tight"><div class="table-wrap"><table class="clinical-table perm-table">
+            <thead><tr><th>Rol</th>${DATA.PERMISSIONS.map(([, l, d]) => `<th title="${esc(d)}">${esc(l)}</th>`).join("")}</tr></thead>
+            <tbody>${state.roles.map((r) => `
+              <tr>
+                <th scope="row"><strong>${esc(r.label)}</strong><span class="field-hint">${state.users.filter((u) => u.roleId === r.id && u.active).length} usuario(s) activo(s)</span></th>
+                ${DATA.PERMISSIONS.map(([k, l]) => {
+                  // La jefatura no puede quitarse la administración: dejaría el servicio sin quien administre.
+                  const locked = r.id === "jefatura" && k === "admin";
+                  return `<td><label class="perm-check"><input type="checkbox" data-perm-role="${esc(r.id)}" data-perm-key="${k}" ${r.permissions[k] ? "checked" : ""} ${locked ? "disabled" : ""} /><span class="sr-only">${esc(r.label)}: ${esc(l)}</span>${locked ? '<span class="field-hint">fijo</span>' : ""}</label></td>`;
+                }).join("")}
+              </tr>`).join("")}</tbody>
+          </table></div></div>
+        </section>`;
+    } else {
+      body = auditHtml();
+    }
+    return `
+      <div class="page-header"><div><h1 class="page-title">Administración</h1><p class="page-desc">Usuarios del servicio, qué puede hacer cada rol y registro de todo lo que se hizo.</p></div></div>
+      <div class="seg admin-seg" role="tablist" aria-label="Secciones de administración">
+        ${tabs.map(([id, l]) => `<button class="seg-btn${tab === id ? " is-on" : ""}" type="button" role="tab" aria-selected="${tab === id}" data-admin-tab="${id}">${l}</button>`).join("")}
+      </div>
+      ${body}`;
+  }
+
+  function auditHtml() {
+    return `
+      <section class="panel">
+        <div class="panel-head"><div>
+          <h2 class="panel-title">Bitácora de auditoría (${state.auditLog.length} registros)</h2>
+          <p class="panel-sub">Cada alta, cambio clínico, firma, importación o cambio de permisos queda registrado</p>
+        </div></div>
+        <div class="panel-body tight"><div class="table-wrap"><table class="clinical-table">
+          <thead><tr><th>Fecha y hora</th><th>Usuario y rol</th><th>Acción</th><th>Registro</th><th>Detalle</th></tr></thead>
+          <tbody>${state.auditLog.map((a) => `
+            <tr>
+              <td class="mono" style="white-space:nowrap">${esc(ENG.fmtDate(a.ts))}</td>
+              <td><strong>${esc(a.user)}</strong><div class="field-hint">${esc(a.role)}</div></td>
+              <td>${esc(a.action)}</td>
+              <td class="mono">${esc(a.target)}</td>
+              <td>${esc(a.detail)}</td>
+            </tr>`).join("")}</tbody>
+        </table></div></div>
+      </section>`;
+  }
+
+  function showUserModal(userId) {
+    const u = state.users.find((x) => x.id === userId) || { name: "", matricula: "", email: "", roleId: "planta" };
+    openModal(
+      userId ? `Editar usuario · ${u.name}` : "Nuevo usuario",
+      `<div class="form-grid">
+        <div class="field"><label for="us-name">Nombre y apellido <span class="req">*</span></label><input class="input" id="us-name" value="${esc(u.name)}" placeholder="Ej. Dr. Martín López" /></div>
+        <div class="field"><label for="us-mat">Matrícula</label><input class="input mono" id="us-mat" value="${esc(u.matricula)}" placeholder="Ej. MN 123.456" /></div>
+        <div class="field"><label for="us-mail">Correo institucional</label><input class="input" id="us-mail" type="email" value="${esc(u.email || "")}" placeholder="Opcional" /></div>
+        <div class="field"><label for="us-role">Rol <span class="req">*</span></label><select class="select" id="us-role">${state.roles.map((r) => `<option value="${esc(r.id)}" ${r.id === u.roleId ? "selected" : ""}>${esc(r.label)}</option>`).join("")}</select></div>
+      </div>
+      <p class="field-hint" id="us-role-help">${esc(DATA.ROLE_INFO[u.roleId] || "")}</p>`,
+      `<button class="btn btn-secondary" type="button" data-close-modal>Cancelar</button>
+       <button class="btn btn-primary" type="button" id="us-save" data-user-id="${esc(userId || "")}">${userId ? "Guardar cambios" : "Dar de alta"}</button>`
+    );
+  }
+
+  function saveUserFromModal(userId) {
+    const name = (document.getElementById("us-name").value || "").trim();
+    if (!name) { toast("Ingresá el nombre del usuario."); document.getElementById("us-name").focus(); return; }
+    const roleId = document.getElementById("us-role").value;
+    const data = {
+      name,
+      matricula: (document.getElementById("us-mat").value || "").trim(),
+      email: (document.getElementById("us-mail").value || "").trim(),
+      roleId,
+      initials: name.replace(/^(Dr\\.?|Dra\\.?|Lic\\.?)\\s+/i, "").split(/\\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("")
+    };
+    const me = activeUser();
+    if (userId) {
+      const u = state.users.find((x) => x.id === userId);
+      // Nadie puede quitarse a sí mismo la administración desde acá.
+      if (u.id === me.id && !roleOf(roleId).permissions.admin) { toast("No podés quitarte la administración a vos mismo."); return; }
+      const before = `${u.name} · ${roleOf(u.roleId).label}`;
+      Object.assign(u, data);
+      logAudit("Edición de usuario", u.name, `${before} → ${u.name} · ${roleOf(u.roleId).label}`);
+    } else {
+      const u = Object.assign({ id: `u-${Date.now()}`, active: true }, data);
+      state.users.push(u);
+      logAudit("Alta de usuario", u.name, `Rol: ${roleOf(u.roleId).label}`);
+    }
+    saveState();
+    closeModal();
+    toast(userId ? "Usuario actualizado." : `Usuario dado de alta: ${name}.`);
+    render();
+  }
+
+  // ===================== INICIO (tablero rápido) =====================
+  function viewInicio() {
     const r = activeRole();
-    const pending = state.patients.filter((p) => p.status === "ingreso_incompleto" || (isActive(p) && !p.admissionDraft.validated));
-    const recent = state.patients.filter(isActive).filter((p) => !pending.includes(p)).slice(0, 8);
-    const row = (p, note) => `
-      <button class="he-item" type="button" data-open-patient="${esc(p.id)}" data-target-route="ingreso">
-        <span class="he-item-name">${esc(p.fullName)}</span>
-        <span class="he-item-meta">${esc(ENG.fmtGa(p.gaWeeks, p.gaDays))} sem · ${esc(ENG.fmtWeight(p.birthWeight, "—"))} · ${esc(note)}</span>
+    const today = ENG.REF_DATE;
+    const active = state.patients.filter(isActive);
+    const totalBeds = DATA.SECTORS.reduce((a, s) => a + s.capacity, 0);
+    const admittedToday = state.patients.filter((p) => p.admitDate === today);
+    const dischargedToday = state.patients.filter((p) => p.dischargeDate === today);
+    const unsignedAdm = state.patients.filter((p) => p.status === "ingreso_incompleto" || (isActive(p) && !p.admissionDraft.validated));
+    const pendingEpi = state.patients.filter((p) => !isActive(p) && !p.epicrisisDraft.validated);
+    const pendingData = active.filter((p) => HE_TABS.some((t) => t.id !== "resumen" && appliesTo(p, t.applies) && tabProgress(p, t.id).missing));
+    const openResp = active.filter((p) => ENG.num(p.gaWeeks) !== null && ENG.num(p.gaWeeks) < 32 && p.hosp.respCoverage !== "completa");
+    const tlIssues = active.flatMap((p) => Object.entries(TL.TIMELINES).flatMap(([kind, cfg]) =>
+      (cfg.issues ? cfg.issues(p.hosp[cfg.list] || [], p) : []).map(([, text]) => ({ p, kind, text }))));
+    const hour = new Date().getHours();
+    const greet = hour < 12 ? "Buen día" : hour < 20 ? "Buenas tardes" : "Buenas noches";
+    const kindTab = { resp: "respiratorio", nutr: "nutricion", iaas: "infeccioso", cath: "accesos", tx: "hemato", rop: "prematurez", surg: "procedimientos" };
+
+    const kpi = (label, value, note, attrs, tone) => `
+      <button class="kpi${tone ? ` kpi-${tone}` : ""}" type="button" ${attrs}>
+        <span class="kpi-label">${esc(label)}</span>
+        <span class="kpi-value num">${value}</span>
+        <span class="kpi-note">${esc(note)}</span>
       </button>`;
+
+    const todo = [
+      ...unsignedAdm.map((p) => ({ p, text: p.status === "ingreso_incompleto" ? "Ingreso incompleto" : "Ingreso sin firmar", attrs: `data-open-patient="${esc(p.id)}" data-target-route="ingreso"`, tone: "action" })),
+      ...pendingEpi.map((p) => ({ p, text: "Epicrisis sin firmar", attrs: `data-open-patient="${esc(p.id)}" data-target-route="epicrisis"`, tone: "action" })),
+      ...tlIssues.map((i) => ({ p: i.p, text: i.text, attrs: `data-he-goto="${esc(i.p.id)}" data-he-goto-tab="${kindTab[i.kind]}"`, tone: "danger" })),
+      ...openResp.map((p) => ({ p, text: "Cronología respiratoria abierta", attrs: `data-he-goto="${esc(p.id)}" data-he-goto-tab="respiratorio"`, tone: "missing" }))
+    ];
+
+    const q = fold(ui.unitSearch || "");
+    const matches = (p) => !q || fold(`${p.fullName} ${p.id} ${p.hc} ${p.motherName} ${p.motherDni}`).includes(q);
+    const cunaHtml = (p) => {
+      const issue = patientIssues(p)[0];
+      const dol = dayOfLife(p);
+      return `
+        <button class="cuna ${issue ? `has-${issue.tone}` : ""} ${matches(p) ? "" : "is-dimmed"}" type="button" data-open-patient="${esc(p.id)}" data-target-route="${defaultStepFor(p)}">
+          <span class="cuna-name">${esc(p.fullName)}</span>
+          <span class="cuna-facts">${esc(ENG.fmtGa(p.gaWeeks, p.gaDays, "EG s/d"))}${ENG.num(p.gaWeeks) === null ? "" : " sem"}${dol === null ? "" : `, día ${dol}`} · ${esc(ENG.fmtWeight(p.birthWeight, "peso s/d"))}</span>
+          ${issue ? `<span class="cuna-issue tone-${issue.tone}">${esc(issue.text)}</span>` : `<span class="cuna-issue tone-ok">Al día</span>`}
+        </button>`;
+    };
+
     return `
       <div class="page-header">
         <div>
-          <h1 class="page-title">Ingreso</h1>
-          <p class="step-lead">El ingreso rápido abre la cuna con los datos mínimos; la ficha completa se termina después y se firma.</p>
+          <p class="dash-date">${esc((() => { const d = new Date(today + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" }); return d.charAt(0).toUpperCase() + d.slice(1); })())}</p>
+          <h1 class="page-title">${greet}, ${esc(r.name)}</h1>
         </div>
         <div class="page-actions">
           ${r.permissions.createPatient ? `<button class="btn btn-primary" type="button" id="btn-new-patient">Ingreso rápido</button>` : ""}
         </div>
       </div>
-      <div class="ing-grid">
-        <section class="panel"><div class="panel-head"><div><h2 class="panel-title">Fichas por completar o firmar</h2><p class="panel-sub">${pending.length} ingreso(s)</p></div></div>
-          <div class="panel-body he-items">${pending.length ? pending.map((p) => row(p, p.status === "ingreso_incompleto" ? "ingreso incompleto" : "sin firmar")).join("") : `<p class="empty-state">No hay ingresos pendientes.</p>`}</div></section>
-        <section class="panel"><div class="panel-head"><div><h2 class="panel-title">Ingresos firmados de internados</h2><p class="panel-sub">Para consultar o enmendar</p></div></div>
-          <div class="panel-body he-items">${recent.map((p) => row(p, "firmado")).join("")}</div></section>
+
+      <div class="kpis">
+        ${kpi("Internados", active.length, `${totalBeds - active.length} cunas libres de ${totalBeds}`, 'data-scroll-to="mapa"')}
+        ${kpi("Ingresos de hoy", admittedToday.length, admittedToday.length ? `Último: ${admittedToday[0].fullName}` : "Sin ingresos todavía", 'data-nav="ingresos"')}
+        ${kpi("Egresos de hoy", dischargedToday.length, dischargedToday.length ? "Ver en Hospitalización" : "Sin egresos todavía", 'data-he-filter-go="egresados"')}
+        ${kpi("Ingresos sin firmar", unsignedAdm.length, unsignedAdm.length ? "Incompletos o sin validar" : "Todo firmado", 'data-nav="ingresos"', unsignedAdm.length ? "action" : "")}
+        ${kpi("Altas pendientes", pendingEpi.length, pendingEpi.length ? "Epicrisis sin firmar" : "Epicrisis al día", 'data-he-filter-go="egresados"', pendingEpi.length ? "action" : "")}
+        ${kpi("Con datos por completar", pendingData.length, "Internados con preguntas sin responder", 'data-nav="he"', pendingData.length ? "missing" : "")}
+      </div>
+
+      <div class="dash-cols">
+        <section class="panel">
+          <div class="panel-head"><div><h2 class="panel-title">Para resolver</h2><p class="panel-sub">Firmas pendientes y registros con problemas, de lo más urgente a lo menos</p></div></div>
+          <div class="panel-body tight">
+            ${todo.length ? `<ul class="todo-list dash-todo">${todo.slice(0, 12).map((t) => `
+              <li><button class="todo-item" type="button" ${t.attrs}>
+                <span class="todo-mark tone-${t.tone}" aria-hidden="true"></span>
+                <span><strong>${esc(t.p.fullName)}</strong><span class="todo-text">${esc(t.text)}</span></span>
+              </button></li>`).join("")}</ul>
+              ${todo.length > 12 ? `<p class="field-hint dash-more">y ${todo.length - 12} más</p>` : ""}` : `<p class="empty-state">No hay pendientes.</p>`}
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><div><h2 class="panel-title">Actividad reciente</h2><p class="panel-sub">Últimos registros de la bitácora</p></div>
+            ${r.permissions.admin ? `<button class="btn btn-ghost btn-sm" type="button" data-admin-go="auditoria">Ver todo</button>` : ""}</div>
+          <div class="panel-body tight">
+            ${state.auditLog.length ? `<ul class="activity">${state.auditLog.slice(0, 8).map((a) => `
+              <li><span class="activity-time mono">${esc(String(a.ts).slice(11, 16) || "")}</span><span><strong>${esc(a.action)}</strong><span class="todo-text">${esc(a.target)} · ${esc(a.user)}</span></span></li>`).join("")}</ul>`
+              : `<p class="empty-state">Todavía no hay actividad en esta sesión.</p>`}
+          </div>
+        </section>
+      </div>
+
+      <section class="panel" id="mapa">
+        <div class="panel-head">
+          <div><h2 class="panel-title">Mapa de cunas</h2><p class="panel-sub">Tocá una cuna para abrir al bebé, o una libre para ingresar a uno nuevo en ese sector</p></div>
+          <input class="input unit-search" id="unit-search" type="search" placeholder="Buscar por nombre, HC o DNI de la madre" value="${esc(ui.unitSearch || "")}" aria-label="Buscar paciente" />
+        </div>
+        <div class="panel-body unit-map">
+          ${DATA.SECTORS.map((sec) => {
+            const here = active.filter((p) => p.sector === sec.id);
+            const free = Math.max(0, sec.capacity - here.length);
+            return `
+              <section class="sector" aria-labelledby="sec-${esc(sec.id)}">
+                <h3 class="sector-title" id="sec-${esc(sec.id)}">${esc(sec.name)} <span class="sector-count">${here.length} de ${sec.capacity}</span></h3>
+                <div class="cuna-grid">
+                  ${here.map(cunaHtml).join("")}
+                  ${Array.from({ length: free }, () => r.permissions.createPatient
+                    ? `<button class="cuna cuna-free" type="button" data-new-patient-sector="${esc(sec.id)}">Cuna libre<span>Ingresar aquí</span></button>`
+                    : `<div class="cuna cuna-free" aria-label="Cuna libre">Cuna libre</div>`).join("")}
+                </div>
+              </section>`;
+          }).join("")}
+          ${active.some((p) => !p.sector) ? `<section class="sector"><h3 class="sector-title">Sin sector asignado</h3><div class="cuna-grid">${active.filter((p) => !p.sector).map(cunaHtml).join("")}</div></section>` : ""}
+        </div>
+      </section>`;
+  }
+
+  // ===================== INGRESO =====================
+  // Ingreso rápido en la misma página (los datos mínimos para abrir la cuna) y las fichas
+  // completas por terminar o firmar. El mismo formulario rápido se usa desde Inicio y las cunas.
+  function quickAdmissionFields(presetSector) {
+    return `
+      <div class="form-grid">
+        <div class="field"><label for="np-name">Nombre o «RN de …» <span class="req">*</span></label><input class="input" id="np-name" placeholder="Ej. RN de Laura Rojas" /></div>
+        <div class="field"><label for="np-sex">Sexo</label><select class="select" id="np-sex"><option value="">Sin consignar</option><option value="F">Femenino</option><option value="M">Masculino</option><option value="I">Indeterminado</option></select></div>
+        <div class="field"><label for="np-hc">N° de historia clínica</label><input class="input mono" id="np-hc" placeholder="Opcional" /></div>
+        <div class="field"><label for="np-mother">Nombre de la madre</label><input class="input" id="np-mother" placeholder="Opcional" /></div>
+        <div class="field"><label for="np-bdate">Fecha de nacimiento</label><input class="input" id="np-bdate" type="date" /></div>
+        <div class="field"><label for="np-adate">Fecha de ingreso a la unidad</label><input class="input" id="np-adate" type="date" value="${ENG.REF_DATE}" /></div>
+        <div class="field"><label for="np-sector">Sector</label><select class="select" id="np-sector"><option value="">Sin asignar</option>${DATA.SECTORS.map((s) => `<option value="${esc(s.id)}" ${s.id === presetSector ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></div>
+        <div class="field"><label for="np-gaw">EG semanas</label><input class="input num" id="np-gaw" type="number" min="22" max="43" placeholder="Opcional" /></div>
+        <div class="field"><label for="np-gad">EG días</label><input class="input num" id="np-gad" type="number" min="0" max="6" placeholder="Opcional" /></div>
+        <div class="field"><label for="np-wt">Peso al nacer (g)</label><input class="input num" id="np-wt" type="number" min="350" max="5500" placeholder="Opcional" /></div>
       </div>`;
   }
 
-  // ===================== ADMINISTRACIÓN (usuarios y permisos; el alta de usuarios llega en el corte 3) =====================
-  function viewAdmin() {
-    const perms = [["createPatient", "Crear pacientes"], ["editClinical", "Editar datos clínicos"], ["signDraft", "Firmar ingreso y epicrisis"], ["importFiles", "Importar datos"], ["exportFull", "Exportar base completa"], ["admin", "Administrar usuarios"]];
+  function viewIngresos() {
+    const r = activeRole();
+    const q = fold(ui.ingresoSearch || "");
+    const match = (p) => !q || fold(`${p.fullName} ${p.hc || ""} ${p.id}`).includes(q);
+    const pending = state.patients.filter((p) => (p.status === "ingreso_incompleto" || (isActive(p) && !p.admissionDraft.validated)) && match(p));
+    const signed = state.patients.filter((p) => isActive(p) && p.admissionDraft.validated && match(p));
+    const row = (p, note, tone) => `
+      <button class="he-item" type="button" data-open-patient="${esc(p.id)}" data-target-route="ingreso">
+        <span class="he-item-name">${esc(p.fullName)}</span>
+        <span class="he-item-meta">${esc(ENG.fmtGa(p.gaWeeks, p.gaDays, "EG s/d"))} sem · ${esc(ENG.fmtWeight(p.birthWeight, "peso s/d"))} · ingresó ${esc(ENG.fmtDate(p.admitDate) || "—")}</span>
+        <span class="he-item-foot"><span class="status-pill status-${tone}">${esc(note)}</span>${coreMissingFields(p).length ? `<span class="he-pend">${coreMissingFields(p).length} dato(s) del ingreso sin responder</span>` : ""}</span>
+      </button>`;
     return `
-      <div class="page-header"><div><h1 class="page-title">Administración</h1><p class="step-lead">Usuarios del servicio y qué puede hacer cada rol.</p></div></div>
-      <section class="panel"><div class="panel-body tight"><div class="table-wrap"><table class="clinical-table">
-        <thead><tr><th>Usuario</th><th>Rol</th>${perms.map(([, l]) => `<th>${esc(l)}</th>`).join("")}</tr></thead>
-        <tbody>${DATA.ROLES.map((u) => `<tr><td><strong>${esc(u.name)}</strong><br><span class="mono field-hint">${esc(u.matricula)}</span></td><td>${esc(u.roleLabel)}</td>${perms.map(([k]) => `<td>${u.permissions[k] ? '<span class="status-pill status-ok">Sí</span>' : '<span class="status-pill status-na">No</span>'}</td>`).join("")}</tr>`).join("")}</tbody>
-      </table></div></div></section>`;
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Ingreso</h1>
+          <p class="page-desc">El ingreso rápido abre la cuna con lo mínimo; la ficha completa (antecedentes, parto, reanimación y diagnósticos) se termina después y se firma.</p>
+        </div>
+      </div>
+      <div class="ing-grid">
+        ${r.permissions.createPatient ? `
+        <section class="panel">
+          <div class="panel-head"><div><h2 class="panel-title">Ingreso rápido</h2><p class="panel-sub">Solo el nombre es obligatorio. Lo que no completes queda «Sin responder»: la app nunca inventa datos clínicos</p></div></div>
+          <div class="panel-body">
+            ${quickAdmissionFields("")}
+            <div class="form-actions">
+              <button class="btn btn-secondary" type="button" id="confirm-new-patient" data-after="stay">Crear y seguir ingresando</button>
+              <button class="btn btn-primary" type="button" id="confirm-new-patient-full">Crear y completar la ficha</button>
+            </div>
+          </div>
+        </section>` : ""}
+        <section class="panel">
+          <div class="panel-head">
+            <div><h2 class="panel-title">Fichas de ingreso</h2><p class="panel-sub">${pending.length} por completar o firmar · ${signed.length} firmadas de internados</p></div>
+            <input class="input" id="ingreso-search" type="search" placeholder="Buscar" value="${esc(ui.ingresoSearch || "")}" aria-label="Buscar ficha de ingreso" />
+          </div>
+          <div class="panel-body he-items ing-list">
+            ${pending.length ? `<h3 class="list-group">Por completar o firmar</h3>${pending.map((p) => row(p, p.status === "ingreso_incompleto" ? "Ingreso incompleto" : "Sin firmar", "warn")).join("")}` : ""}
+            ${signed.length ? `<h3 class="list-group">Firmadas</h3>${signed.map((p) => row(p, "Firmado", "ok")).join("")}` : ""}
+            ${!pending.length && !signed.length ? `<p class="empty-state">Ninguna ficha coincide.</p>` : ""}
+          </div>
+        </section>
+      </div>`;
   }
 
   // ===================== VIEW 5: EPICRISIS =====================
@@ -2091,14 +2335,33 @@
 
   // ===================== VIEW 9: ADMIN Y AUDITORÍA =====================
   function viewConfiguracion() {
-    const canAdmin = activeRole().id === "jefatura";
+    const canAdmin = activeRole().permissions.admin;
     return `
       <div class="page-header">
         <div>
-          <h1 class="page-title">Administración, roles y auditoría</h1>
-          <p class="page-desc">Parámetros de la institución, sectores y camas, catálogos, perfiles de usuario y bitácora de auditoría.</p>
+          <h1 class="page-title">Configuración</h1>
+          <p class="page-desc">Tu perfil profesional, los datos de la institución, sectores y camas, catálogos y respaldo. Los usuarios y permisos están en Administración.</p>
         </div>
       </div>
+
+      <div class="grid-equal">
+        <section class="panel">
+          <div class="panel-head"><div><h2 class="panel-title">Mi perfil profesional</h2><p class="panel-sub">Con este nombre y matrícula se firman los ingresos y las epicrisis</p></div></div>
+          <div class="panel-body">
+            <div class="form-grid">
+              <div class="field"><label for="me-name">Nombre y apellido</label><input class="input" id="me-name" value="${esc(activeUser().name)}" /></div>
+              <div class="field"><label for="me-mat">Matrícula</label><input class="input mono" id="me-mat" value="${esc(activeUser().matricula || "")}" /></div>
+              <div class="field"><label>Rol</label><p class="derived-val">${esc(activeRole().roleLabel)}</p><span class="field-hint">El rol y los permisos los asigna la jefatura en Administración</span></div>
+            </div>
+            <div class="form-actions"><button class="btn btn-primary btn-sm" type="button" id="btn-save-me">Guardar mi perfil</button></div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><div><h2 class="panel-title">Respaldo</h2><p class="panel-sub">Copia de todo lo cargado en esta maqueta (pacientes, usuarios y auditoría)</p></div></div>
+          <div class="panel-body">
+            <p class="field-hint" style="margin-top:0">En el sistema real el respaldo es automático y cifrado en el servidor; acá se descarga un archivo para guardar o mostrar.</p>
+            <button class="btn btn-secondary" type="button" id="btn-backup">Descargar copia de seguridad</button>
+          </div>
 
       <div class="grid-equal">
         <section class="panel">
@@ -2172,70 +2435,30 @@
         </div>
       </section>
 
-      <div class="grid-equal">
-        <section class="panel">
-          <div class="panel-head"><div><h2 class="panel-title">Perfiles y permisos</h2><p class="panel-sub">Quién puede cargar, firmar, importar y exportar</p></div></div>
-          <div class="panel-body tight">
-            <div class="table-wrap">
-              <table class="clinical-table">
-                <thead><tr><th>Perfil</th><th>Editar</th><th>Firmar</th><th>Importar</th><th>Exportar full</th></tr></thead>
-                <tbody>
-                  ${DATA.ROLES.map((rl) => `
-                    <tr>
-                      <td><strong>${esc(rl.roleLabel)}</strong><div class="field-hint">${esc(rl.name)}</div></td>
-                      <td>${rl.permissions.editClinical ? "Sí" : "No"}</td>
-                      <td>${rl.permissions.signDraft ? "Sí" : "No"}</td>
-                      <td>${rl.permissions.importFiles ? "Sí" : "No"}</td>
-                      <td>${rl.permissions.exportFull ? "Sí" : "No"}</td>
-                    </tr>
-                  `).join("")}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </section>
       </div>
-
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">Bitácora de auditoría en vivo (${state.auditLog.length} registros)</h2>
-            <p class="panel-sub">Cada alta, cambio clínico, validación o importación que hagas en la maqueta queda registrada acá</p>
-          </div>
-        </div>
-        <div class="panel-body tight">
-          <div class="table-wrap">
-            <table class="clinical-table">
-              <thead><tr><th>Fecha / Hora</th><th>Usuario y rol</th><th>Acción</th><th>Registro</th><th>Detalle</th></tr></thead>
-              <tbody>
-                ${state.auditLog.map((a) => `
-                  <tr>
-                    <td class="mono" style="white-space:nowrap">${esc(ENG.fmtDate(a.ts))}</td>
-                    <td><strong>${esc(a.user)}</strong><div class="field-hint">${esc(a.role)}</div></td>
-                    <td>${esc(a.action)}</td>
-                    <td class="mono">${esc(a.target)}</td>
-                    <td>${esc(a.detail)}</td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
     `;
   }
 
   // ===================== MAIN RENDER =====================
   function render() {
     ENG.setInstitution({ eosIncidence: state.eosIncidence });
+    // Sin sesión se muestra solo la pantalla de perfiles (sin barra lateral ni superior).
+    const login = !hasSession();
+    document.body.classList.toggle("is-login", login);
+    if (login) {
+      document.getElementById("patient-strip").hidden = true;
+      document.getElementById("main").innerHTML = viewLogin();
+      return;
+    }
     renderNav();
     renderTopbar();
     renderPatientStrip();
 
     const views = {
-      unidad: viewUnidad,
-      inicio: viewUnidad,
-      pacientes: viewUnidad,
+      unidad: viewInicio,
+      inicio: viewInicio,
+      pacientes: viewInicio,
       ingreso: viewIngreso,
       ingresos: viewIngresos,
       he: viewHE,
@@ -2246,36 +2469,21 @@
       configuracion: viewConfiguracion
     };
 
-    document.getElementById("main").innerHTML = (views[ui.route] || viewUnidad)();
+    document.getElementById("main").innerHTML = (views[ui.route] || viewInicio)();
     bindViewEvents();
   }
 
   // ===================== MODALS & ACTIONS =====================
-  function showRoleModal() {
-    const body = DATA.ROLES.map((rl) => `
-      <button class="role-option ${rl.id === state.activeRoleId ? "selected" : ""}" type="button" data-pick-role="${esc(rl.id)}">
-        <div>
-          <strong style="display:block;color:var(--navy)">${esc(rl.name)}</strong>
-          <span class="field-hint">${esc(rl.roleLabel)} · ${esc(rl.matricula)}</span>
-        </div>
-        <span class="status-pill ${rl.permissions.signDraft ? "status-hosp" : rl.permissions.editClinical ? "status-warn" : "status-na"}">
-          ${rl.permissions.signDraft ? "Firma médica" : rl.permissions.editClinical ? "Carga sin firma" : "Solo lectura"}
-        </span>
-      </button>
-    `).join("");
-    openModal("Cambiar perfil de demostración (RBAC)", body);
-  }
-
   function showGuideModal() {
     openModal(
       "Guion de la reunión con el servicio",
       `<p class="field-hint" style="margin:0 0 12px">Objetivo: salir con respuestas a cuatro preguntas. ¿Falta alguna variable? ¿Sobra alguna? ¿El borrador se redactaría distinto? ¿Las tasas son las que informan a Jefatura?</p>
       <ol class="guide-steps">
-        <li><strong>Unidad y perfiles (2 min).</strong> Plano de cunas, panel «Para firmar» y datos por completar. Cambiá a <em>Dirección</em> para mostrar la vista de solo lectura.
+        <li><strong>Perfiles e Inicio (2 min).</strong> Pantalla de perfiles con sus permisos, tablero de Inicio y mapa de cunas. Tocá tu nombre arriba a la derecha y entrá como <em>Dirección</em> para mostrar la vista de solo lectura.
           <span class="guide-ask">Preguntar: ¿los sectores y cunas son los reales?</span></li>
-        <li><strong>Ficha de ingreso (4 min).</strong> Tocá una cuna libre y creá un paciente solo con el nombre. Abrí <em>Mateo Cabrera</em> (Kaiser) y <em>Alma Ríos</em> (CRIB II). Abrí y cerrá la rama de embarazo gemelar.
+        <li><strong>Ficha de ingreso (4 min).</strong> Desde <em>Ingreso</em>, creá un paciente solo con el nombre. Abrí <em>Mateo Cabrera</em> (Kaiser) y <em>Alma Ríos</em> (CRIB II). Abrí y cerrá la rama de embarazo gemelar.
           <span class="guide-ask">Preguntar: recorrer las etiquetas <span class="badge-confirm">A confirmar</span>, ¿cuáles registran hoy? ¿Cargan el SIP?</span></li>
-        <li><strong>Hospitalización y epicrisis (3 min).</strong> <em>Alma Ríos</em>: línea respiratoria y DBP calculada. <em>Martina Álvarez</em>: sífilis congénita. Generá la epicrisis y leé dos secciones.
+        <li><strong>Hospitalización y epicrisis (3 min).</strong> <em>Alma Ríos</em>: Resumen, línea respiratoria (agregá un cambio), evaluación nutricional y quincenales. <em>Martina Álvarez</em>: sífilis congénita. Generá la epicrisis y leé dos secciones.
           <span class="guide-ask">Preguntar: ¿la redacción y el orden son los que usan?</span></li>
         <li><strong>Importar (2 min).</strong> Pestaña <em>Documento</em>: procesá la nota de sala de partos y aceptá o rechazá campos.
           <span class="guide-ask">Preguntar: ¿tienen planillas históricas o derivaciones en PDF / Word?</span></li>
@@ -2288,22 +2496,11 @@
 
   function showNewPatientModal(presetSector) {
     openModal(
-      "Alta rápida de paciente",
-      `<p class="field-hint" style="margin-bottom:12px">Solo el nombre es obligatorio. Lo que no completes queda como «Sin responder» y se carga después en la ficha de ingreso: la app nunca rellena datos clínicos por su cuenta.</p>
-      <div class="form-grid">
-        <div class="field"><label for="np-name">Nombre / RN de (obligatorio)</label><input class="input" id="np-name" placeholder="Ej. RN de Laura Rojas" /></div>
-        <div class="field"><label for="np-sex">Sexo</label><select class="select" id="np-sex"><option value="">Sin consignar</option><option value="F">Femenino</option><option value="M">Masculino</option><option value="I">Indeterminado</option></select></div>
-        <div class="field"><label for="np-hc">N° Historia Clínica</label><input class="input mono" id="np-hc" placeholder="Opcional" /></div>
-        <div class="field"><label for="np-mother">Nombre de la madre</label><input class="input" id="np-mother" placeholder="Opcional" /></div>
-        <div class="field"><label for="np-bdate">Fecha de nacimiento</label><input class="input" id="np-bdate" type="date" /></div>
-        <div class="field"><label for="np-adate">Fecha de ingreso a la unidad</label><input class="input" id="np-adate" type="date" value="${ENG.REF_DATE}" /></div>
-        <div class="field"><label for="np-sector">Sector inicial</label><select class="select" id="np-sector"><option value="">Sin asignar</option>${DATA.SECTORS.map((s) => `<option value="${esc(s.id)}" ${s.id === presetSector ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></div>
-        <div class="field"><label for="np-gaw">EG semanas</label><input class="input num" id="np-gaw" type="number" min="22" max="43" placeholder="Opcional" /></div>
-        <div class="field"><label for="np-gad">EG días</label><input class="input num" id="np-gad" type="number" min="0" max="6" placeholder="Opcional" /></div>
-        <div class="field"><label for="np-wt">Peso al nacer (g)</label><input class="input num" id="np-wt" type="number" min="350" max="5500" placeholder="Opcional" /></div>
-      </div>`,
+      "Ingreso rápido",
+      `<p class="field-hint" style="margin-bottom:12px">Solo el nombre es obligatorio. Lo que no completes queda «Sin responder» y se carga después en la ficha de ingreso: la app nunca rellena datos clínicos por su cuenta.</p>
+      ${quickAdmissionFields(presetSector)}`,
       `<button class="btn btn-secondary" type="button" data-close-modal>Cancelar</button>
-       <button class="btn btn-primary" type="button" id="confirm-new-patient">Crear en Ingreso incompleto</button>`
+       <button class="btn btn-primary" type="button" id="confirm-new-patient-full">Crear y completar la ficha</button>`
     );
   }
 
@@ -2502,6 +2699,36 @@
         }, 0);
       };
     });
+
+    const saveMe = document.getElementById("btn-save-me");
+    if (saveMe) saveMe.onclick = () => {
+      const u = activeUser();
+      const name = (document.getElementById("me-name").value || "").trim();
+      if (!name) { toast("El nombre no puede quedar vacío."); return; }
+      const before = `${u.name} · ${u.matricula}`;
+      u.name = name;
+      u.matricula = (document.getElementById("me-mat").value || "").trim();
+      saveState();
+      logAudit("Edición de perfil propio", u.name, `${before} → ${u.name} · ${u.matricula}`);
+      toast("Perfil guardado: así vas a figurar en las firmas.");
+      render();
+    };
+    const backup = document.getElementById("btn-backup");
+    if (backup) backup.onclick = () => {
+      downloadFile(`neosalud_respaldo_${ENG.REF_DATE}.json`, JSON.stringify(state, null, 2), "application/json");
+      logAudit("Respaldo descargado", "Base de la maqueta", `${state.patients.length} pacientes · ${state.users.length} usuarios`);
+      toast("Copia de seguridad descargada.");
+    };
+
+    const ingSearch = document.getElementById("ingreso-search");
+    if (ingSearch) {
+      ingSearch.oninput = () => {
+        ui.ingresoSearch = ingSearch.value;
+        render();
+        const again = document.getElementById("ingreso-search");
+        if (again) { again.focus(); again.setSelectionRange(ui.ingresoSearch.length, ui.ingresoSearch.length); }
+      };
+    }
 
     // Hospitalización y epicrisis: búsqueda en la lista de pacientes
     const heSearch = document.getElementById("he-search");
@@ -3153,15 +3380,54 @@
       return;
     }
 
-    const pickRole = t.closest("[data-pick-role]");
-    if (pickRole) {
-      state.activeRoleId = pickRole.getAttribute("data-pick-role");
+    // Login simulado
+    const loginBtn = t.closest("[data-login-user]");
+    if (loginBtn) {
+      state.activeUserId = loginBtn.getAttribute("data-login-user");
+      setSession(true);
       saveState();
-      closeModal();
-      toast(`Perfil activo: ${activeRole().name} (${activeRole().roleLabel}).`);
+      logAudit("Inicio de sesión", activeRole().name, activeRole().roleLabel);
+      ui.route = "unidad";
+      render();
+      toast(`Ingresaste como ${activeRole().name} (${activeRole().roleLabel}).`);
+      return;
+    }
+
+    // Administración
+    const adminTab = t.closest("[data-admin-tab]");
+    if (adminTab) { ui.adminTab = adminTab.getAttribute("data-admin-tab"); render(); return; }
+    const adminGo = t.closest("[data-admin-go]");
+    if (adminGo) { ui.adminTab = adminGo.getAttribute("data-admin-go"); navigate("admin"); return; }
+    const userEdit = t.closest("[data-user-edit]");
+    if (userEdit) { showUserModal(userEdit.getAttribute("data-user-edit") || null); return; }
+    if (t.closest("#us-save")) { saveUserFromModal(t.closest("#us-save").getAttribute("data-user-id") || null); return; }
+    const userToggle = t.closest("[data-user-toggle]");
+    if (userToggle) {
+      const u = state.users.find((x) => x.id === userToggle.getAttribute("data-user-toggle"));
+      const admins = state.users.filter((x) => x.active && roleOf(x.roleId).permissions.admin);
+      if (u.active && roleOf(u.roleId).permissions.admin && admins.length <= 1) { toast("Es el único usuario que administra: no se puede desactivar."); return; }
+      u.active = !u.active;
+      saveState();
+      logAudit(u.active ? "Reactivación de usuario" : "Baja de usuario", u.name, roleOf(u.roleId).label);
+      toast(u.active ? `${u.name} vuelve a estar activo.` : `${u.name} quedó inactivo: ya no puede ingresar.`);
       render();
       return;
     }
+
+    // Accesos del tablero de Inicio
+    const scrollTo = t.closest("[data-scroll-to]");
+    if (scrollTo) { const el = document.getElementById(scrollTo.getAttribute("data-scroll-to")); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+    const heFilterGo = t.closest("[data-he-filter-go]");
+    if (heFilterGo) { ui.heFilter = heFilterGo.getAttribute("data-he-filter-go"); ui.heTab = "resumen"; navigate("he"); return; }
+    const heGoto = t.closest("[data-he-goto]");
+    if (heGoto) {
+      ui.selectedPatientId = heGoto.getAttribute("data-he-goto");
+      ui.heTab = heGoto.getAttribute("data-he-goto-tab");
+      ui.heFilter = "activos";
+      navigate("he");
+      return;
+    }
+
 
     if (t.closest("[data-close-modal]") || t.closest("#modal-close") || t.id === "modal-backdrop") {
       closeModal();
@@ -3186,7 +3452,7 @@
     }
 
     // Modal confirm handlers
-    if (t.id === "confirm-new-patient") {
+    if (t.id === "confirm-new-patient" || t.id === "confirm-new-patient-full") {
       const fullName = document.getElementById("np-name")?.value.trim();
       if (!fullName) { toast("Ingresá un nombre para el recién nacido."); return; }
       const newId = nextCorrelativeId();
@@ -3208,11 +3474,40 @@
       saveState();
       logAudit("Alta rápida de paciente", `${newId} (${fullName})`, `Sector ${newPt.sector} · Estado: ingreso_incompleto`);
       closeModal();
+      if (t.id === "confirm-new-patient") {
+        toast(`${fullName} ingresado (${newId}). Podés seguir con el próximo.`);
+        render();
+        document.getElementById("np-name")?.focus();
+        return;
+      }
       toast(`Paciente ${newId} creado en Ingreso incompleto.`);
       navigate("ingreso", newId);
       return;
     }
 
+  });
+
+  // Administración: permisos por rol (se aplican al instante) y ayuda del rol en el alta de usuario.
+  document.addEventListener("change", (e) => {
+    const cb = e.target.closest && e.target.closest("[data-perm-role]");
+    if (cb) {
+      const role = roleOf(cb.getAttribute("data-perm-role"));
+      const key = cb.getAttribute("data-perm-key");
+      if (role.id === "jefatura" && key === "admin") return;
+      role.permissions[key] = cb.checked;
+      saveState();
+      const label = DATA.PERMISSIONS.find((x) => x[0] === key)[1];
+      logAudit("Cambio de permisos", role.label, `${label}: ${cb.checked ? "habilitado" : "quitado"}`);
+      toast(`${role.label}: «${label}» ${cb.checked ? "habilitado" : "quitado"}.`);
+      render();
+      const again = document.querySelector(`[data-perm-role="${role.id}"][data-perm-key="${key}"]`);
+      if (again) again.focus();
+      return;
+    }
+    if (e.target.id === "us-role") {
+      const help = document.getElementById("us-role-help");
+      if (help) help.textContent = DATA.ROLE_INFO[e.target.value] || "";
+    }
   });
 
   // Campos del editor de cronologías: los desplegables pueden abrir o cerrar otros campos.
@@ -3233,7 +3528,15 @@
 
   // Static shell buttons
   document.getElementById("brand-btn").onclick = () => navigate("inicio");
-  document.getElementById("role-trigger").onclick = showRoleModal;
+  // El botón del perfil cierra la sesión simulada y vuelve a la pantalla de perfiles.
+  document.getElementById("role-trigger").onclick = () => {
+    logAudit("Cierre de sesión", activeRole().name, activeRole().roleLabel);
+    setSession(false);
+    closeModal();
+    closeDrawer();
+    render();
+    window.scrollTo({ top: 0 });
+  };
   document.getElementById("open-guide-btn").onclick = showGuideModal;
   document.getElementById("open-rail-btn").onclick = openDrawer;
   document.getElementById("close-rail-btn").onclick = closeDrawer;

@@ -10,10 +10,10 @@ Sistema de control clínico y gestión para Servicios de Neonatología / UCIN.
 - **Local:** servir la carpeta por HTTP (abrir `index.html` como archivo bloquea el guardado local del navegador):
 
   ```bash
-  python -m http.server 5173 --directory maqueta
+  python -m http.server 5180 --directory maqueta
   ```
 
-  y abrir http://localhost:5173
+  y abrir http://localhost:5180
 
 Cada push a `main` que modifique `maqueta/` vuelve a publicar el sitio mediante el workflow [`.github/workflows/pages.yml`](.github/workflows/pages.yml).
 
